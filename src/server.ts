@@ -34,7 +34,9 @@ interface Job {
 }
 
 // Database file path
-const DB_PATH = path.join(__dirname, 'job_search_db.json');
+const DB_PATH = process.env.NODE_ENV === 'production' 
+  ? path.join(process.cwd(), 'data', 'job_search_db.json')
+  : path.join(__dirname, 'job_search_db.json');
 
 // Initialize database
 async function initDB() {
@@ -42,6 +44,17 @@ async function initDB() {
     await fs.access(DB_PATH);
   } catch {
     await fs.writeFile(DB_PATH, JSON.stringify({ jobs: [] }, null, 2));
+  }
+}
+
+async function ensureDataDir() {
+  if (process.env.NODE_ENV === 'production') {
+    const dataDir = path.join(process.cwd(), 'data');
+    try {
+      await fs.access(dataDir);
+    } catch {
+      await fs.mkdir(dataDir, { recursive: true });
+    }
   }
 }
 
@@ -271,8 +284,9 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Job Tracker API is running' });
 });
 
-// Start server
+// Update start function
 async function start() {
+  await ensureDataDir();
   await initDB();
   app.listen(PORT, () => {
     console.log(`🚀 Job Tracker running on port ${PORT}`);
