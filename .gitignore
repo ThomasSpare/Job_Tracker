@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.env
+job_search_db.json

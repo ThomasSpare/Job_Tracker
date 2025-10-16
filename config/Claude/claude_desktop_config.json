@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "job-search": {
+      "command": "npx",
+      "args": ["-y", "tsx", "/home/tsparejkpg/job-search-mcp/src/index.ts"]
+    }
+  }
+}
