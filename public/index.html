@@ -12,7 +12,7 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #000000;
             min-height: 100vh;
             padding: 20px;
@@ -30,6 +30,36 @@
             margin-bottom: 30px;
             font-size: 2.5rem;
             font-weight: 700;
+        }
+
+        .search-section {
+            background: #16181c;
+            padding: 24px;
+            border-radius: 16px;
+            border: 1px solid #2f3336;
+            margin-bottom: 30px;
+        }
+
+        .search-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 12px 16px;
+            border: 1px solid #2f3336;
+            border-radius: 9999px;
+            background: #000;
+            color: #e7e9ea;
+            font-size: 15px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #1d9bf0;
         }
 
         .stats {
@@ -99,6 +129,16 @@
             background: #1a8cd8;
         }
 
+        .btn-success {
+            background: #00ba7c;
+            color: white;
+            border: none;
+        }
+
+        .btn-success:hover {
+            background: #00a66c;
+        }
+
         select {
             padding: 12px 20px;
             border-radius: 9999px;
@@ -107,10 +147,6 @@
             background: #16181c;
             color: #e7e9ea;
             cursor: pointer;
-        }
-
-        select:hover {
-            background: #1c1f23;
         }
 
         .jobs-grid {
@@ -129,6 +165,10 @@
         .job-card:hover {
             background: #1c1f23;
             border-color: #3d4144;
+        }
+
+        .job-card.search-result {
+            border-left: 3px solid #1d9bf0;
         }
 
         .job-header {
@@ -171,6 +211,15 @@
             color: #71767b;
             margin: 10px 0;
             font-size: 15px;
+        }
+
+        .job-description {
+            color: #71767b;
+            font-size: 14px;
+            margin: 10px 0;
+            max-height: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .job-actions {
@@ -217,6 +266,7 @@
         .modal-content h2 {
             color: #e7e9ea;
             font-weight: 700;
+            margin-bottom: 20px;
         }
 
         .form-group {
@@ -252,44 +302,66 @@
             resize: vertical;
         }
 
-        .copy-box {
-            background: #16181c;
-            border: 1px solid #2f3336;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-            position: relative;
-        }
-
-        .copy-box pre {
-            color: #e7e9ea;
-        }
-
-        .copy-btn {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-        }
-
         .empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #71767b;
         }
 
-        .empty-state-icon {
-            font-size: 4rem;
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #71767b;
+        }
+
+        .spinner {
+            border: 3px solid #2f3336;
+            border-top: 3px solid #1d9bf0;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
             margin-bottom: 20px;
         }
 
-        .empty-state h2 {
-            color: #e7e9ea;
-            font-weight: 700;
+        .alert-error {
+            background: rgba(249, 24, 128, 0.1);
+            border: 1px solid #f91880;
+            color: #f91880;
+        }
+
+        .alert-success {
+            background: rgba(0, 186, 124, 0.1);
+            border: 1px solid #00ba7c;
+            color: #00ba7c;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: auto;
         }
 
         @media (max-width: 768px) {
             h1 { font-size: 1.8rem; }
             .stats { grid-template-columns: repeat(2, 1fr); }
+            .search-form { flex-direction: column; }
         }
     </style>
 </head>
@@ -297,10 +369,21 @@
     <div class="container">
         <h1>📋 Job Search Tracker</h1>
 
+        <!-- Job Search Section -->
+        <div class="search-section">
+            <h2 style="margin-bottom: 15px; font-size: 1.3rem;">🔍 Search Jobs</h2>
+            <div class="search-form">
+                <input type="text" id="searchQuery" class="search-input" placeholder="e.g., fullstack developer, react, node.js" />
+                <input type="text" id="searchLocation" class="search-input" placeholder="Location (optional)" style="flex: 0.5;" />
+                <button class="btn btn-primary" onclick="searchJobs()">Search</button>
+            </div>
+            <div id="searchResults" style="margin-top: 20px;"></div>
+        </div>
+
         <div class="stats" id="stats"></div>
 
         <div class="controls">
-            <button class="btn btn-primary" onclick="openAddJobModal()">➕ Add Job</button>
+            <button class="btn btn-primary" onclick="openAddJobModal()">➕ Add Job Manually</button>
             <select id="statusFilter" onchange="filterJobs()">
                 <option value="all">All Jobs</option>
                 <option value="new">New</option>
@@ -319,7 +402,7 @@
     <!-- Add Job Modal -->
     <div class="modal" id="addJobModal">
         <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">Add New Job</h2>
+            <h2>Add New Job</h2>
             <form id="addJobForm">
                 <div class="form-group">
                     <label>Job Title *</label>
@@ -364,9 +447,11 @@
     <!-- Careerflow Modal -->
     <div class="modal" id="careerflowModal">
         <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">📝 Careerflow Data</h2>
-            <p style="margin-bottom: 15px; color: #666;">Copy this information to Careerflow AI:</p>
-            <div class="copy-box" id="careerflowData"></div>
+            <h2>📝 Careerflow Data</h2>
+            <p style="margin-bottom: 15px; color: #71767b;">Copy this information to Careerflow AI:</p>
+            <div style="background: #16181c; border: 1px solid #2f3336; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <pre id="careerflowData" style="white-space: pre-wrap; font-family: inherit; color: #e7e9ea;"></pre>
+            </div>
             <button class="btn btn-primary" onclick="copyCareerflowData()">📋 Copy All</button>
             <button class="btn" onclick="closeCareerflowModal()" style="margin-left: 10px;">Close</button>
         </div>
@@ -374,6 +459,7 @@
 
     <script>
         const API_URL = window.location.origin;
+        let selectedJobsForImport = new Set();
 
         // Load initial data
         async function loadData() {
@@ -385,29 +471,30 @@
             const res = await fetch(`${API_URL}/api/stats`);
             const data = await res.json();
             
+            const stats = data.stats;
             const statsHTML = `
                 <div class="stat-card">
-                    <div class="stat-number">${data.stats.total}</div>
+                    <div class="stat-number">${stats.total}</div>
                     <div class="stat-label">Total Jobs</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.stats.new}</div>
+                    <div class="stat-number">${stats.new}</div>
                     <div class="stat-label">New</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.stats.applied}</div>
+                    <div class="stat-number">${stats.applied}</div>
                     <div class="stat-label">Applied</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.stats.interviewing}</div>
+                    <div class="stat-number">${stats.interviewing}</div>
                     <div class="stat-label">Interviewing</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.stats.offers}</div>
+                    <div class="stat-number">${stats.offers}</div>
                     <div class="stat-label">Offers</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.stats.weeklyApplications}</div>
+                    <div class="stat-number">${stats.weeklyApplications}</div>
                     <div class="stat-label">This Week</div>
                 </div>
             `;
@@ -425,9 +512,9 @@
             if (data.jobs.length === 0) {
                 grid.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">🔍</div>
-                        <h2>No jobs found</h2>
-                        <p>Add your first job to get started!</p>
+                        <div style="font-size: 4rem; margin-bottom: 20px;">🔍</div>
+                        <h2 style="color: #e7e9ea; font-weight: 700;">No jobs found</h2>
+                        <p>Search for jobs above or add one manually!</p>
                     </div>
                 `;
                 return;
@@ -437,19 +524,19 @@
                 <div class="job-card">
                     <div class="job-header">
                         <div>
-                            <div class="job-title">${job.title}</div>
-                            <div class="job-company">${job.company}</div>
+                            <div class="job-title">${escapeHtml(job.title)}</div>
+                            <div class="job-company">${escapeHtml(job.company)}</div>
                         </div>
                         <span class="status-badge status-${job.status}">${job.status}</span>
                     </div>
                     <div class="job-info">
-                        📍 ${job.location} ${job.salary ? `| 💰 ${job.salary}` : ''}
+                        📍 ${escapeHtml(job.location)} ${job.salary ? `| 💰 ${escapeHtml(job.salary)}` : ''}
                     </div>
                     <div class="job-info">
                         🗓️ Added: ${new Date(job.postedDate).toLocaleDateString()}
                         ${job.appliedDate ? `| Applied: ${new Date(job.appliedDate).toLocaleDateString()}` : ''}
                     </div>
-                    ${job.notes ? `<div class="job-info">📝 ${job.notes}</div>` : ''}
+                    ${job.notes ? `<div class="job-info">📝 ${escapeHtml(job.notes)}</div>` : ''}
                     <div class="job-actions">
                         <a href="${job.url}" target="_blank" class="btn btn-small">View Job</a>
                         <button class="btn btn-small" onclick="prepareCareerflow('${job.id}')">Prepare for Careerflow</button>
@@ -458,6 +545,121 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        async function searchJobs() {
+            const query = document.getElementById('searchQuery').value.trim();
+            const location = document.getElementById('searchLocation').value.trim();
+            
+            if (!query) {
+                alert('Please enter a search query');
+                return;
+            }
+
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Searching for jobs...</div>';
+
+            try {
+                const params = new URLSearchParams({ query });
+                if (location) params.append('location', location);
+
+                const res = await fetch(`${API_URL}/api/search?${params}`);
+                const data = await res.json();
+
+                if (!data.success) {
+                    resultsDiv.innerHTML = `<div class="alert alert-error">${data.error}</div>`;
+                    return;
+                }
+
+                if (data.jobs.length === 0) {
+                    resultsDiv.innerHTML = '<div class="alert alert-error">No jobs found. Try different keywords.</div>';
+                    return;
+                }
+
+                selectedJobsForImport.clear();
+                
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-success">Found ${data.total} jobs!</div>
+                    <div style="margin-bottom: 15px;">
+                        <button class="btn btn-success" onclick="importSelectedJobs()">Import Selected Jobs</button>
+                        <button class="btn" onclick="selectAllJobs(${data.jobs.length})">Select All</button>
+                    </div>
+                    <div class="jobs-grid">
+                        ${data.jobs.map((job, index) => `
+                            <div class="job-card search-result">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="job-${index}" onchange="toggleJobSelection(${index}, ${JSON.stringify(job).replace(/"/g, '&quot;')})">
+                                    <label for="job-${index}" style="margin: 0; cursor: pointer;">Select this job</label>
+                                </div>
+                                <div class="job-header" style="margin-top: 10px;">
+                                    <div>
+                                        <div class="job-title">${escapeHtml(job.title)}</div>
+                                        <div class="job-company">${escapeHtml(job.company)}</div>
+                                    </div>
+                                </div>
+                                <div class="job-info">
+                                    📍 ${escapeHtml(job.location)} ${job.salary ? `| 💰 ${escapeHtml(job.salary)}` : ''}
+                                </div>
+                                ${job.description ? `<div class="job-description">${escapeHtml(job.description.substring(0, 200))}...</div>` : ''}
+                                <div class="job-actions">
+                                    <a href="${job.url}" target="_blank" class="btn btn-small">View Job</a>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = '<div class="alert alert-error">Search failed. Please try again.</div>';
+            }
+        }
+
+        function toggleJobSelection(index, job) {
+            const checkbox = document.getElementById(`job-${index}`);
+            if (checkbox.checked) {
+                selectedJobsForImport.add(JSON.stringify(job));
+            } else {
+                selectedJobsForImport.delete(JSON.stringify(job));
+            }
+        }
+
+        function selectAllJobs(count) {
+            for (let i = 0; i < count; i++) {
+                const checkbox = document.getElementById(`job-${i}`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            }
+        }
+
+        async function importSelectedJobs() {
+            if (selectedJobsForImport.size === 0) {
+                alert('Please select at least one job to import');
+                return;
+            }
+
+            const jobs = Array.from(selectedJobsForImport).map(j => JSON.parse(j));
+
+            try {
+                const res = await fetch(`${API_URL}/api/jobs/bulk`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobs })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    alert(`✅ Successfully imported ${data.imported} jobs!`);
+                    document.getElementById('searchResults').innerHTML = '';
+                    document.getElementById('searchQuery').value = '';
+                    document.getElementById('searchLocation').value = '';
+                    selectedJobsForImport.clear();
+                    loadData();
+                }
+            } catch (error) {
+                alert('Failed to import jobs. Please try again.');
+            }
         }
 
         function filterJobs() {
@@ -528,7 +730,7 @@ Job URL: ${data.jobUrl}
 Job Description:
 ${data.jobDescription}`;
             
-            document.getElementById('careerflowData').innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit;">${formatted}</pre>`;
+            document.getElementById('careerflowData').textContent = formatted;
             document.getElementById('careerflowModal').classList.add('active');
             
             // Update status to tailoring
@@ -540,10 +742,25 @@ ${data.jobDescription}`;
         }
 
         function copyCareerflowData() {
-            const text = document.getElementById('careerflowData').innerText;
+            const text = document.getElementById('careerflowData').textContent;
             navigator.clipboard.writeText(text);
-            alert('Copied to clipboard! Paste this into Careerflow AI.');
+            alert('✅ Copied to clipboard! Paste this into Careerflow AI.');
         }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Search on Enter key
+        document.getElementById('searchQuery').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchJobs();
+        });
+
+        document.getElementById('searchLocation').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchJobs();
+        });
 
         // Load data on page load
         loadData();
