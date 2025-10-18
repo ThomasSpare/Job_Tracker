@@ -26,6 +26,39 @@ interface Job {
   notes?: string;
 }
 
+interface SearchJobsArgs {
+  keywords: string;
+  location?: string;
+  experienceLevel?: "junior" | "mid" | "senior";
+}
+
+interface AddJobArgs {
+  title: string;
+  company: string;
+  location?: string;
+  description?: string;
+  url: string;
+  salary?: string;
+  experienceLevel?: string;
+}
+
+interface UpdateJobArgs {
+  jobId: string;
+  status: "new" | "reviewed" | "tailoring" | "applied" | "interviewing" | "rejected" | "offer";
+  notes?: string;
+  nextAction?: string;
+  nextActionDate?: string;
+}
+
+interface ListJobsArgs {
+  status?: "all" | "new" | "reviewed" | "tailoring" | "applied" | "interviewing" | "rejected" | "offer";
+  limit?: number;
+}
+
+interface JobIdArg {
+  jobId: string;
+}
+
 // Database file path
 const DB_PATH = path.join(process.cwd(), "job_search_db.json");
 
@@ -181,18 +214,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   switch (name) {
     case "search_jobs": {
-      // In production, integrate with actual job board APIs
-      // For now, returning a mock structure
+      const { keywords, location, experienceLevel } = args as unknown as SearchJobsArgs;
       const mockJobs: Job[] = [
         {
           id: `job_${Date.now()}_1`,
-          title: `Fullstack Developer - ${args.keywords}`,
+          title: `Fullstack Developer - ${keywords}`,
           company: "Tech Company Inc",
-          location: args.location || "Remote",
+          location: location || "Remote",
           description: `Looking for a talented fullstack developer with experience in React, Node.js, and modern web technologies...`,
           url: "https://example.com/job/1",
           postedDate: new Date().toISOString(),
-          experienceLevel: args.experienceLevel || "mid",
+          experienceLevel: experienceLevel || "mid",
           status: "new",
         },
       ];
@@ -213,16 +245,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case "add_job": {
+      const { title, company, location, description, url, salary, experienceLevel } = args as unknown as AddJobArgs;
       const newJob: Job = {
         id: `job_${Date.now()}`,
-        title: args.title,
-        company: args.company,
-        location: args.location || "Not specified",
-        description: args.description || "",
-        url: args.url,
+        title,
+        company,
+        location: location || "Not specified",
+        description: description || "",
+        url,
         postedDate: new Date().toISOString(),
-        salary: args.salary,
-        experienceLevel: args.experienceLevel || "mid",
+        salary,
+        experienceLevel: experienceLevel || "mid",
         status: "new",
       };
 
@@ -240,16 +273,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case "update_job_status": {
-      const job = db.jobs.find((j) => j.id === args.jobId);
+      const { jobId, status, notes, nextAction, nextActionDate } = args as unknown as UpdateJobArgs;
+      const job = db.jobs.find((j) => j.id === jobId);
       if (!job) {
-        throw new Error(`Job with ID ${args.jobId} not found`);
+        throw new Error(`Job with ID ${jobId} not found`);
       }
 
-      job.status = args.status;
-      if (args.notes) job.notes = args.notes;
-      if (args.nextAction) job.nextAction = args.nextAction;
-      if (args.nextActionDate) job.nextActionDate = args.nextActionDate;
-      if (args.status === "applied" && !job.appliedDate) {
+      job.status = status;
+      if (notes) job.notes = notes;
+      if (nextAction) job.nextAction = nextAction;
+      if (nextActionDate) job.nextActionDate = nextActionDate;
+      if (status === "applied" && !job.appliedDate) {
         job.appliedDate = new Date().toISOString();
       }
 
@@ -266,9 +300,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case "list_jobs": {
-      const status = args.status || "all";
-      const limit = args.limit || 50;
-      
+      const { status = "all", limit = 50 } = args as ListJobsArgs;
       let filteredJobs = status === "all" 
         ? db.jobs 
         : db.jobs.filter((j) => j.status === status);
@@ -293,9 +325,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case "extract_job_requirements": {
-      const job = db.jobs.find((j) => j.id === args.jobId);
+      const { jobId } = args as unknown as JobIdArg;
+      const job = db.jobs.find((j) => j.id === jobId);
       if (!job) {
-        throw new Error(`Job with ID ${args.jobId} not found`);
+        throw new Error(`Job with ID ${jobId} not found`);
       }
 
       // Simple keyword extraction (in production, use NLP or Claude API)
@@ -324,9 +357,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case "prepare_careerflow_data": {
-      const job = db.jobs.find((j) => j.id === args.jobId);
+      if (!args || typeof args !== 'object') {
+        throw new Error('Invalid arguments');
+      }
+      
+      const { jobId } = args as unknown as JobIdArg;
+      if (!jobId) {
+        throw new Error('jobId is required');
+      }
+      
+      const job = db.jobs.find((j) => j.id === jobId);
       if (!job) {
-        throw new Error(`Job with ID ${args.jobId} not found`);
+        throw new Error(`Job with ID ${jobId} not found`);
       }
 
       const careerflowData = {
