@@ -458,6 +458,36 @@
         </div>
     </div>
 
+    <!-- Quick Add Modal (Mobile-friendly) -->
+    <div class="modal" id="quickAddModal">
+        <div class="modal-content">
+            <h2>⚡ Quick Add from URL</h2>
+            <p style="margin-bottom: 15px; color: #71767b;">Paste the job posting URL and we'll help you fill in the details:</p>
+            <form id="quickAddForm">
+                <div class="form-group">
+                    <label>Job Posting URL *</label>
+                    <input type="url" id="quickAddUrl" required placeholder="https://...">
+                </div>
+                <div class="form-group">
+                    <label>Job Title *</label>
+                    <input type="text" name="title" required>
+                </div>
+                <div class="form-group">
+                    <label>Company *</label>
+                    <input type="text" name="company" required>
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" name="location" placeholder="Remote, City, etc.">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Add Job</button>
+                    <button type="button" class="btn" onclick="closeQuickAddModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_URL = window.location.origin;
         let selectedJobsForImport = new Set();
@@ -676,6 +706,25 @@
             document.getElementById('addJobForm').reset();
         }
 
+        function openQuickAddModal() {
+            document.getElementById('quickAddModal').classList.add('active');
+            // Try to get URL from clipboard if available
+            if (navigator.clipboard && navigator.clipboard.readText) {
+                navigator.clipboard.readText().then(text => {
+                    if (text.startsWith('http')) {
+                        document.getElementById('quickAddUrl').value = text;
+                    }
+                }).catch(() => {
+                    // Clipboard access denied, user will paste manually
+                });
+            }
+        }
+
+        function closeQuickAddModal() {
+            document.getElementById('quickAddModal').classList.remove('active');
+            document.getElementById('quickAddForm').reset();
+        }
+
         document.getElementById('addJobForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -690,6 +739,25 @@
             if (res.ok) {
                 closeAddJobModal();
                 loadData();
+            }
+        });
+
+        document.getElementById('quickAddForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            data.url = document.getElementById('quickAddUrl').value;
+            
+            const res = await fetch(`${API_URL}/api/jobs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            if (res.ok) {
+                closeQuickAddModal();
+                loadData();
+                alert('✅ Job added successfully!');
             }
         });
 
