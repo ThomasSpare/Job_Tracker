@@ -261,18 +261,29 @@ app.get('/api/search', async (req, res) => {
 
       const data = await response.json();
       
-      jobs = (data.data || []).map((job: any) => ({
-        title: job.job_title,
-        company: job.employer_name,
-        location: job.job_city ? `${job.job_city}, ${job.job_state || job.job_country}` : 'Remote',
-        description: job.job_description || '',
-        url: job.job_apply_link || job.job_google_link,
-        salary: job.job_salary || job.job_min_salary ? 
-          `${job.job_min_salary || ''}-${job.job_max_salary || ''}` : undefined,
-        experienceLevel: job.job_required_experience?.no_experience_required ? 'junior' : 'mid',
-        postedDate: job.job_posted_at_datetime_utc,
-        source: 'JSearch'
-      }));
+      jobs = (data.data || []).map((job: any) => {
+        let salary = undefined;
+        if (job.job_salary) {
+          salary = job.job_salary;
+        } else if (job.job_min_salary || job.job_max_salary) {
+          salary = `${job.job_min_salary || ''}-${job.job_max_salary || ''}`;
+        }
+        
+        const experienceLevel = job.job_required_experience && 
+          job.job_required_experience.no_experience_required ? 'junior' : 'mid';
+        
+        return {
+          title: job.job_title,
+          company: job.employer_name,
+          location: job.job_city ? `${job.job_city}, ${job.job_state || job.job_country}` : 'Remote',
+          description: job.job_description || '',
+          url: job.job_apply_link || job.job_google_link,
+          salary: salary,
+          experienceLevel: experienceLevel,
+          postedDate: job.job_posted_at_datetime_utc,
+          source: 'JSearch'
+        };
+      });
     }
     
     // RemoteOK API (Free, no auth required)
@@ -322,9 +333,10 @@ app.get('/api/search', async (req, res) => {
         app_id: appId,
         app_key: appKey,
         results_per_page: '20',
-        what: query as string,
-        content-type: 'application/json'
+        what: query as string
       });
+      
+      params.append('content-type', 'application/json');
       
       const response = await fetch(
         `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`
