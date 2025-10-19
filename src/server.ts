@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import pg from 'pg';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -9,11 +10,18 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const { Pool } = pg;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 // Job data structure
 interface Job {
@@ -33,40 +41,32 @@ interface Job {
   notes?: string;
 }
 
-// Database file path
-const DB_PATH = process.env.NODE_ENV === 'production' 
-  ? path.join(process.cwd(), 'data', 'job_search_db.json')
-  : path.join(__dirname, 'job_search_db.json');
-
 // Initialize database
 async function initDB() {
   try {
-    await fs.access(DB_PATH);
-  } catch {
-    await fs.writeFile(DB_PATH, JSON.stringify({ jobs: [] }, null, 2));
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS jobs (
+        id VARCHAR(255) PRIMARY KEY,
+        title VARCHAR(500) NOT NULL,
+        company VARCHAR(255) NOT NULL,
+        location VARCHAR(255),
+        description TEXT,
+        url TEXT NOT NULL,
+        posted_date TIMESTAMP,
+        salary VARCHAR(100),
+        experience_level VARCHAR(50),
+        status VARCHAR(50) DEFAULT 'new',
+        applied_date TIMESTAMP,
+        next_action TEXT,
+        next_action_date TIMESTAMP,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Database initialized');
+  } catch (error) {
+    console.error('❌ Database initialization error:', error);
   }
-}
-
-async function ensureDataDir() {
-  if (process.env.NODE_ENV === 'production') {
-    const dataDir = path.join(process.cwd(), 'data');
-    try {
-      await fs.access(dataDir);
-    } catch {
-      await fs.mkdir(dataDir, { recursive: true });
-    }
-  }
-}
-
-// Read database
-async function readDB(): Promise<{ jobs: Job[] }> {
-  const data = await fs.readFile(DB_PATH, 'utf-8');
-  return JSON.parse(data);
-}
-
-// Write database
-async function writeDB(data: { jobs: Job[] }) {
-  await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2));
 }
 
 // API Routes
@@ -74,16 +74,38 @@ async function writeDB(data: { jobs: Job[] }) {
 // Get all jobs
 app.get('/api/jobs', async (req, res) => {
   try {
-    const db = await readDB();
     const status = req.query.status as string;
     
-    let jobs = db.jobs;
+    let query = 'SELECT * FROM jobs ORDER BY created_at DESC';
+    let params: any[] = [];
+    
     if (status && status !== 'all') {
-      jobs = jobs.filter(j => j.status === status);
+      query = 'SELECT * FROM jobs WHERE status = $1 ORDER BY created_at DESC';
+      params = [status];
     }
+    
+    const result = await pool.query(query, params);
+    
+    const jobs = result.rows.map(row => ({
+      id: row.id,
+      title: row.title,
+      company: row.company,
+      location: row.location,
+      description: row.description,
+      url: row.url,
+      postedDate: row.posted_date,
+      salary: row.salary,
+      experienceLevel: row.experience_level,
+      status: row.status,
+      appliedDate: row.applied_date,
+      nextAction: row.next_action,
+      nextActionDate: row.next_action_date,
+      notes: row.notes
+    }));
     
     res.json({ success: true, jobs });
   } catch (error) {
+    console.error('Error fetching jobs:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch jobs' });
   }
 });
@@ -91,12 +113,29 @@ app.get('/api/jobs', async (req, res) => {
 // Get single job
 app.get('/api/jobs/:id', async (req, res) => {
   try {
-    const db = await readDB();
-    const job = db.jobs.find(j => j.id === req.params.id);
+    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [req.params.id]);
     
-    if (!job) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
+    
+    const row = result.rows[0];
+    const job = {
+      id: row.id,
+      title: row.title,
+      company: row.company,
+      location: row.location,
+      description: row.description,
+      url: row.url,
+      postedDate: row.posted_date,
+      salary: row.salary,
+      experienceLevel: row.experience_level,
+      status: row.status,
+      appliedDate: row.applied_date,
+      nextAction: row.next_action,
+      nextActionDate: row.next_action_date,
+      notes: row.notes
+    };
     
     res.json({ success: true, job });
   } catch (error) {
@@ -113,26 +152,44 @@ app.post('/api/jobs', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
     
-    const db = await readDB();
+    const id = `job_${Date.now()}`;
     
-    const newJob: Job = {
-      id: `job_${Date.now()}`,
-      title,
-      company,
-      location: location || 'Not specified',
-      description: description || '',
-      url,
-      postedDate: new Date().toISOString(),
-      salary,
-      experienceLevel: experienceLevel || 'mid',
-      status: 'new',
+    await pool.query(
+      `INSERT INTO jobs (id, title, company, location, description, url, posted_date, salary, experience_level, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        id,
+        title,
+        company,
+        location || 'Not specified',
+        description || '',
+        url,
+        new Date().toISOString(),
+        salary,
+        experienceLevel || 'mid',
+        'new'
+      ]
+    );
+    
+    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [id]);
+    const row = result.rows[0];
+    
+    const newJob = {
+      id: row.id,
+      title: row.title,
+      company: row.company,
+      location: row.location,
+      description: row.description,
+      url: row.url,
+      postedDate: row.posted_date,
+      salary: row.salary,
+      experienceLevel: row.experience_level,
+      status: row.status
     };
-    
-    db.jobs.unshift(newJob);
-    await writeDB(db);
     
     res.json({ success: true, job: newJob });
   } catch (error) {
+    console.error('Error adding job:', error);
     res.status(500).json({ success: false, error: 'Failed to add job' });
   }
 });
@@ -146,26 +203,34 @@ app.post('/api/jobs/bulk', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid jobs array' });
     }
 
-    const db = await readDB();
+    const insertedJobs = [];
     
-    const newJobs = jobs.map((job: any) => ({
-      id: `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      title: job.title,
-      company: job.company,
-      location: job.location || 'Not specified',
-      description: job.description || '',
-      url: job.url,
-      postedDate: job.postedDate || new Date().toISOString(),
-      salary: job.salary,
-      experienceLevel: job.experienceLevel || 'mid',
-      status: 'new' as const,
-    }));
-
-    db.jobs.unshift(...newJobs);
-    await writeDB(db);
+    for (const job of jobs) {
+      const id = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      await pool.query(
+        `INSERT INTO jobs (id, title, company, location, description, url, posted_date, salary, experience_level, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          id,
+          job.title,
+          job.company,
+          job.location || 'Not specified',
+          job.description || '',
+          job.url,
+          job.postedDate || new Date().toISOString(),
+          job.salary,
+          job.experienceLevel || 'mid',
+          'new'
+        ]
+      );
+      
+      insertedJobs.push({ id, ...job });
+    }
     
-    res.json({ success: true, imported: newJobs.length, jobs: newJobs });
+    res.json({ success: true, imported: insertedJobs.length, jobs: insertedJobs });
   } catch (error) {
+    console.error('Error importing jobs:', error);
     res.status(500).json({ success: false, error: 'Failed to import jobs' });
   }
 });
@@ -173,25 +238,87 @@ app.post('/api/jobs/bulk', async (req, res) => {
 // Update job
 app.put('/api/jobs/:id', async (req, res) => {
   try {
-    const db = await readDB();
-    const jobIndex = db.jobs.findIndex(j => j.id === req.params.id);
+    const updates = req.body;
+    const id = req.params.id;
     
-    if (jobIndex === -1) {
+    // Build dynamic update query
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+    
+    if (updates.title) {
+      fields.push(`title = $${paramCount++}`);
+      values.push(updates.title);
+    }
+    if (updates.company) {
+      fields.push(`company = $${paramCount++}`);
+      values.push(updates.company);
+    }
+    if (updates.location !== undefined) {
+      fields.push(`location = $${paramCount++}`);
+      values.push(updates.location);
+    }
+    if (updates.description !== undefined) {
+      fields.push(`description = $${paramCount++}`);
+      values.push(updates.description);
+    }
+    if (updates.status) {
+      fields.push(`status = $${paramCount++}`);
+      values.push(updates.status);
+      
+      // Auto-set appliedDate when status changes to applied
+      if (updates.status === 'applied') {
+        fields.push(`applied_date = $${paramCount++}`);
+        values.push(new Date().toISOString());
+      }
+    }
+    if (updates.notes !== undefined) {
+      fields.push(`notes = $${paramCount++}`);
+      values.push(updates.notes);
+    }
+    if (updates.nextAction !== undefined) {
+      fields.push(`next_action = $${paramCount++}`);
+      values.push(updates.nextAction);
+    }
+    if (updates.nextActionDate !== undefined) {
+      fields.push(`next_action_date = $${paramCount++}`);
+      values.push(updates.nextActionDate);
+    }
+    
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, error: 'No fields to update' });
+    }
+    
+    values.push(id);
+    const query = `UPDATE jobs SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+    
+    const result = await pool.query(query, values);
+    
+    if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
     
-    const updates = req.body;
-    db.jobs[jobIndex] = { ...db.jobs[jobIndex], ...updates };
+    const row = result.rows[0];
+    const job = {
+      id: row.id,
+      title: row.title,
+      company: row.company,
+      location: row.location,
+      description: row.description,
+      url: row.url,
+      postedDate: row.posted_date,
+      salary: row.salary,
+      experienceLevel: row.experience_level,
+      status: row.status,
+      appliedDate: row.applied_date,
+      nextAction: row.next_action,
+      nextActionDate: row.next_action_date,
+      notes: row.notes
+    };
     
-    // Auto-set appliedDate when status changes to applied
-    if (updates.status === 'applied' && !db.jobs[jobIndex].appliedDate) {
-      db.jobs[jobIndex].appliedDate = new Date().toISOString();
-    }
-    
-    await writeDB(db);
-    
-    res.json({ success: true, job: db.jobs[jobIndex] });
+    res.json({ success: true, job });
   } catch (error) {
+    console.error('Error updating job:', error);
     res.status(500).json({ success: false, error: 'Failed to update job' });
   }
 });
@@ -199,15 +326,11 @@ app.put('/api/jobs/:id', async (req, res) => {
 // Delete job
 app.delete('/api/jobs/:id', async (req, res) => {
   try {
-    const db = await readDB();
-    const jobIndex = db.jobs.findIndex(j => j.id === req.params.id);
+    const result = await pool.query('DELETE FROM jobs WHERE id = $1 RETURNING id', [req.params.id]);
     
-    if (jobIndex === -1) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
-    
-    db.jobs.splice(jobIndex, 1);
-    await writeDB(db);
     
     res.json({ success: true });
   } catch (error) {
@@ -295,7 +418,8 @@ app.get('/api/search', async (req, res) => {
       const keywords = (query as string).toLowerCase().split(' ');
       const filtered = data.filter((job: any) => {
         if (!job.position) return false;
-        const text = `${job.position} ${job.description || ''} ${job.tags?.join(' ') || ''}`.toLowerCase();
+        const tags = job.tags ? job.tags.join(' ') : '';
+        const text = `${job.position} ${job.description || ''} ${tags}`.toLowerCase();
         return keywords.some(keyword => text.includes(keyword));
       }).slice(0, 20);
       
@@ -305,7 +429,7 @@ app.get('/api/search', async (req, res) => {
         location: job.location || 'Remote',
         description: job.description || '',
         url: job.url,
-        salary: job.salary_max ? `${job.salary_min || 0}-${job.salary_max}` : undefined,
+        salary: job.salary_max ? `$${job.salary_min || 0}-${job.salary_max}` : undefined,
         experienceLevel: 'mid',
         postedDate: job.date,
         source: 'RemoteOK'
@@ -324,7 +448,6 @@ app.get('/api/search', async (req, res) => {
         });
       }
       
-      // Default to DE (Germany), can be changed to NL, FR, UK, etc.
       const country = (location as string)?.toLowerCase().includes('uk') ? 'gb' : 
                      (location as string)?.toLowerCase().includes('france') ? 'fr' :
                      (location as string)?.toLowerCase().includes('netherlands') ? 'nl' : 'de';
@@ -357,9 +480,7 @@ app.get('/api/search', async (req, res) => {
       }));
     }
     
-    // WeWorkRemotely (Scraping-friendly)
     else if (searchSource === 'weworkremotely') {
-      // This is a simplified version - in production you'd want proper scraping
       return res.json({
         success: false,
         error: 'WeWorkRemotely integration coming soon. Use RemoteOK or Adzuna for now.'
@@ -376,14 +497,14 @@ app.get('/api/search', async (req, res) => {
 // Extract job requirements
 app.get('/api/jobs/:id/requirements', async (req, res) => {
   try {
-    const db = await readDB();
-    const job = db.jobs.find(j => j.id === req.params.id);
+    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [req.params.id]);
     
-    if (!job) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
     
-    // Extract technical keywords
+    const job = result.rows[0];
+    
     const techKeywords = [
       'React', 'Node.js', 'JavaScript', 'TypeScript', 'Python',
       'SQL', 'MongoDB', 'PostgreSQL', 'MySQL', 'AWS', 'Azure', 'GCP',
@@ -393,14 +514,14 @@ app.get('/api/jobs/:id/requirements', async (req, res) => {
     ];
     
     const foundSkills = techKeywords.filter(skill =>
-      job.description.toLowerCase().includes(skill.toLowerCase())
+      job.description && job.description.toLowerCase().includes(skill.toLowerCase())
     );
     
     res.json({
       success: true,
       requirements: {
         skills: foundSkills,
-        experienceLevel: job.experienceLevel,
+        experienceLevel: job.experience_level,
         description: job.description
       }
     });
@@ -412,12 +533,13 @@ app.get('/api/jobs/:id/requirements', async (req, res) => {
 // Prepare Careerflow data
 app.get('/api/jobs/:id/careerflow', async (req, res) => {
   try {
-    const db = await readDB();
-    const job = db.jobs.find(j => j.id === req.params.id);
+    const result = await pool.query('SELECT * FROM jobs WHERE id = $1', [req.params.id]);
     
-    if (!job) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Job not found' });
     }
+    
+    const job = result.rows[0];
     
     const careerflowData = {
       jobTitle: job.title,
@@ -437,26 +559,37 @@ app.get('/api/jobs/:id/careerflow', async (req, res) => {
 // Get statistics
 app.get('/api/stats', async (req, res) => {
   try {
-    const db = await readDB();
+    const totalResult = await pool.query('SELECT COUNT(*) as count FROM jobs');
+    const statusResults = await pool.query(`
+      SELECT status, COUNT(*) as count 
+      FROM jobs 
+      GROUP BY status
+    `);
     
-    const stats = {
-      total: db.jobs.length,
-      new: db.jobs.filter(j => j.status === 'new').length,
-      reviewed: db.jobs.filter(j => j.status === 'reviewed').length,
-      tailoring: db.jobs.filter(j => j.status === 'tailoring').length,
-      applied: db.jobs.filter(j => j.status === 'applied').length,
-      interviewing: db.jobs.filter(j => j.status === 'interviewing').length,
-      offers: db.jobs.filter(j => j.status === 'offer').length,
-      rejected: db.jobs.filter(j => j.status === 'rejected').length,
-    };
-    
-    // Calculate weekly stats
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     
-    const weeklyApplications = db.jobs.filter(j =>
-      j.appliedDate && new Date(j.appliedDate) >= weekAgo
-    ).length;
+    const weeklyResult = await pool.query(
+      'SELECT COUNT(*) as count FROM jobs WHERE applied_date >= $1',
+      [weekAgo.toISOString()]
+    );
+    
+    const stats: any = {
+      total: parseInt(totalResult.rows[0].count),
+      new: 0,
+      reviewed: 0,
+      tailoring: 0,
+      applied: 0,
+      interviewing: 0,
+      offers: 0,
+      rejected: 0
+    };
+    
+    statusResults.rows.forEach(row => {
+      stats[row.status] = parseInt(row.count);
+    });
+    
+    const weeklyApplications = parseInt(weeklyResult.rows[0].count);
     
     res.json({
       success: true,
@@ -466,6 +599,7 @@ app.get('/api/stats', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Error fetching stats:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch stats' });
   }
 });
@@ -477,7 +611,6 @@ app.get('/api/health', (req, res) => {
 
 // Start server
 async function start() {
-  await ensureDataDir();
   await initDB();
   app.listen(PORT, () => {
     console.log(`🚀 Job Tracker running on port ${PORT}`);
