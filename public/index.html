@@ -367,15 +367,23 @@
 </head>
 <body>
     <div class="container">
-        <h1>🦸‍♂️ Job Search Tracker</h1>
+        <h1>📋 Job Search Tracker</h1>
 
         <!-- Job Search Section -->
         <div class="search-section">
             <h2 style="margin-bottom: 15px; font-size: 1.3rem;">🔍 Search Jobs</h2>
             <div class="search-form">
+                <select id="searchSource" style="flex: 0.3; min-width: 150px;">
+                    <option value="remoteok">RemoteOK (Free)</option>
+                    <option value="jsearch">JSearch (Global)</option>
+                    <option value="adzuna">Adzuna (Europe)</option>
+                </select>
                 <input type="text" id="searchQuery" class="search-input" placeholder="e.g., fullstack developer, react, node.js" />
                 <input type="text" id="searchLocation" class="search-input" placeholder="Location (optional)" style="flex: 0.5;" />
                 <button class="btn btn-primary" onclick="searchJobs()">Search</button>
+            </div>
+            <div style="margin-top: 10px; color: #71767b; font-size: 14px;">
+                <span id="sourceInfo">💡 RemoteOK: No API key needed, remote jobs worldwide</span>
             </div>
             <div id="searchResults" style="margin-top: 20px;"></div>
         </div>
