@@ -215,64 +215,146 @@ app.delete('/api/jobs/:id', async (req, res) => {
   }
 });
 
-// Search jobs from external API
+// Search jobs from external APIs
 app.get('/api/search', async (req, res) => {
   try {
-    const { query, location } = req.query;
+    const { query, location, source } = req.query;
     
     if (!query) {
       return res.status(400).json({ success: false, error: 'Query is required' });
     }
 
-    // Using JSearch API (you'll need to get a free API key from RapidAPI)
-    const apiKey = process.env.RAPIDAPI_KEY;
+    const searchSource = source || 'jsearch';
+    let jobs: any[] = [];
+
+    // JSearch API (RapidAPI)
+    if (searchSource === 'jsearch') {
+      const apiKey = process.env.RAPIDAPI_KEY;
+      
+      if (!apiKey) {
+        return res.status(500).json({ 
+          success: false, 
+          error: 'RAPIDAPI_KEY not configured. Add it to Railway environment variables.' 
+        });
+      }
+
+      const params = new URLSearchParams({
+        query: query as string,
+        page: '1',
+        num_pages: '1',
+        date_posted: 'week'
+      });
+
+      if (location) {
+        params.append('location', location as string);
+      }
+
+      const response = await fetch(
+        `https://jsearch.p.rapidapi.com/search?${params}`,
+        {
+          headers: {
+            'X-RapidAPI-Key': apiKey,
+            'X-RapidAPI-Host': 'jsearch.p.rapidapi.com'
+          }
+        }
+      );
+
+      const data = await response.json();
+      
+      jobs = (data.data || []).map((job: any) => ({
+        title: job.job_title,
+        company: job.employer_name,
+        location: job.job_city ? `${job.job_city}, ${job.job_state || job.job_country}` : 'Remote',
+        description: job.job_description || '',
+        url: job.job_apply_link || job.job_google_link,
+        salary: job.job_salary || job.job_min_salary ? 
+          `${job.job_min_salary || ''}-${job.job_max_salary || ''}` : undefined,
+        experienceLevel: job.job_required_experience?.no_experience_required ? 'junior' : 'mid',
+        postedDate: job.job_posted_at_datetime_utc,
+        source: 'JSearch'
+      }));
+    }
     
-    if (!apiKey) {
-      return res.status(500).json({ 
-        success: false, 
-        error: 'API key not configured. Add RAPIDAPI_KEY to environment variables in Railway.' 
+    // RemoteOK API (Free, no auth required)
+    else if (searchSource === 'remoteok') {
+      const response = await fetch('https://remoteok.com/api');
+      const data = await response.json();
+      
+      // Filter by query keywords
+      const keywords = (query as string).toLowerCase().split(' ');
+      const filtered = data.filter((job: any) => {
+        if (!job.position) return false;
+        const text = `${job.position} ${job.description || ''} ${job.tags?.join(' ') || ''}`.toLowerCase();
+        return keywords.some(keyword => text.includes(keyword));
+      }).slice(0, 20);
+      
+      jobs = filtered.map((job: any) => ({
+        title: job.position,
+        company: job.company,
+        location: job.location || 'Remote',
+        description: job.description || '',
+        url: job.url,
+        salary: job.salary_max ? `${job.salary_min || 0}-${job.salary_max}` : undefined,
+        experienceLevel: 'mid',
+        postedDate: job.date,
+        source: 'RemoteOK'
+      }));
+    }
+    
+    // Adzuna API (Europe-focused)
+    else if (searchSource === 'adzuna') {
+      const appId = process.env.ADZUNA_APP_ID;
+      const appKey = process.env.ADZUNA_APP_KEY;
+      
+      if (!appId || !appKey) {
+        return res.status(500).json({
+          success: false,
+          error: 'Adzuna API credentials not configured. Add ADZUNA_APP_ID and ADZUNA_APP_KEY to environment variables.'
+        });
+      }
+      
+      // Default to DE (Germany), can be changed to NL, FR, UK, etc.
+      const country = (location as string)?.toLowerCase().includes('uk') ? 'gb' : 
+                     (location as string)?.toLowerCase().includes('france') ? 'fr' :
+                     (location as string)?.toLowerCase().includes('netherlands') ? 'nl' : 'de';
+      
+      const params = new URLSearchParams({
+        app_id: appId,
+        app_key: appKey,
+        results_per_page: '20',
+        what: query as string,
+        content-type: 'application/json'
+      });
+      
+      const response = await fetch(
+        `https://api.adzuna.com/v1/api/jobs/${country}/search/1?${params}`
+      );
+      
+      const data = await response.json();
+      
+      jobs = (data.results || []).map((job: any) => ({
+        title: job.title,
+        company: job.company.display_name,
+        location: `${job.location.display_name}, ${country.toUpperCase()}`,
+        description: job.description || '',
+        url: job.redirect_url,
+        salary: job.salary_max ? `€${Math.round(job.salary_min || 0)}-${Math.round(job.salary_max)}` : undefined,
+        experienceLevel: 'mid',
+        postedDate: job.created,
+        source: 'Adzuna'
+      }));
+    }
+    
+    // WeWorkRemotely (Scraping-friendly)
+    else if (searchSource === 'weworkremotely') {
+      // This is a simplified version - in production you'd want proper scraping
+      return res.json({
+        success: false,
+        error: 'WeWorkRemotely integration coming soon. Use RemoteOK or Adzuna for now.'
       });
     }
 
-    const params = new URLSearchParams({
-      query: query as string,
-      page: '1',
-      num_pages: '1',
-      date_posted: 'week'
-    });
-
-    if (location) {
-      params.append('location', location as string);
-    }
-
-    const response = await fetch(
-      `https://jsearch.p.rapidapi.com/search?${params}`,
-      {
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'jsearch.p.rapidapi.com'
-        }
-      }
-    );
-
-    const data = await response.json();
-    
-    // Transform API response to our format
-    const jobs = (data.data || []).map((job: any) => ({
-      title: job.job_title,
-      company: job.employer_name,
-      location: job.job_city ? `${job.job_city}, ${job.job_state || job.job_country}` : 'Remote',
-      description: job.job_description || '',
-      url: job.job_apply_link || job.job_google_link,
-      salary: job.job_salary || job.job_min_salary ? 
-        `${job.job_min_salary || ''}-${job.job_max_salary || ''}` : undefined,
-      experienceLevel: job.job_required_experience?.no_experience_required ? 'junior' : 'mid',
-      postedDate: job.job_posted_at_datetime_utc,
-      highlights: job.job_highlights,
-      employmentType: job.job_employment_type
-    }));
-
-    res.json({ success: true, jobs, total: jobs.length });
+    res.json({ success: true, jobs, total: jobs.length, source: searchSource });
   } catch (error) {
     console.error('Search error:', error);
     res.status(500).json({ success: false, error: 'Failed to search jobs. Please try again.' });
