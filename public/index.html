@@ -374,16 +374,31 @@
             <h2 style="margin-bottom: 15px; font-size: 1.3rem;">🔍 Search Jobs</h2>
             <div class="search-form">
                 <select id="searchSource" style="flex: 0.3; min-width: 150px;">
-                    <option value="remoteok">RemoteOK (Free)</option>
-                    <option value="jsearch">JSearch (Global)</option>
+                    <option value="remoteok">RemoteOK (Global)</option>
+                    <option value="jsearch">JSearch (US-focused)</option>
                     <option value="adzuna">Adzuna (Europe)</option>
                 </select>
                 <input type="text" id="searchQuery" class="search-input" placeholder="e.g., fullstack developer, react, node.js" />
-                <input type="text" id="searchLocation" class="search-input" placeholder="Location (optional)" style="flex: 0.5;" />
+                <input type="text" id="searchLocation" class="search-input" placeholder="Europe, Germany, Remote..." style="flex: 0.5;" />
                 <button class="btn btn-primary" onclick="searchJobs()">Search</button>
             </div>
+            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 5px; color: #71767b; cursor: pointer;">
+                    <input type="checkbox" id="filterRemoteOnly" style="width: auto;">
+                    Fully Remote Only
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; color: #71767b; cursor: pointer;">
+                    <input type="checkbox" id="filterEuropeOnly" style="width: auto;">
+                    Europe Only
+                </label>
+                <select id="resultsPerPage" style="padding: 8px; border-radius: 4px; border: 1px solid #2f3336; background: #16181c; color: #e7e9ea;">
+                    <option value="20">20 results</option>
+                    <option value="50">50 results</option>
+                    <option value="100">100 results</option>
+                </select>
+            </div>
             <div style="margin-top: 10px; color: #71767b; font-size: 14px;">
-                <span id="sourceInfo">💡 RemoteOK: No API key needed, remote jobs worldwide</span>
+                <span id="sourceInfo">💡 RemoteOK: No API key needed, worldwide remote jobs</span>
             </div>
             <div id="searchResults" style="margin-top: 20px;"></div>
         </div>
@@ -463,6 +478,56 @@
             </div>
             <button class="btn btn-primary" onclick="copyCareerflowData()">📋 Copy All</button>
             <button class="btn" onclick="closeCareerflowModal()" style="margin-left: 10px;">Close</button>
+        </div>
+    </div>
+
+    <!-- Edit Job Modal -->
+    <div class="modal" id="editJobModal">
+        <div class="modal-content">
+            <h2>Edit Job</h2>
+            <form id="editJobForm">
+                <input type="hidden" id="editJobId">
+                <div class="form-group">
+                    <label>Job Title *</label>
+                    <input type="text" id="editTitle" required>
+                </div>
+                <div class="form-group">
+                    <label>Company *</label>
+                    <input type="text" id="editCompany" required>
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="editLocation">
+                </div>
+                <div class="form-group">
+                    <label>Job URL *</label>
+                    <input type="url" id="editUrl" required>
+                </div>
+                <div class="form-group">
+                    <label>Salary</label>
+                    <input type="text" id="editSalary">
+                </div>
+                <div class="form-group">
+                    <label>Experience Level</label>
+                    <select id="editExperienceLevel">
+                        <option value="junior">Junior</option>
+                        <option value="mid">Mid</option>
+                        <option value="senior">Senior</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Job Description</label>
+                    <textarea id="editDescription" rows="6"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea id="editNotes" rows="3"></textarea>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="button" class="btn" onclick="closeEditJobModal()">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -590,6 +655,9 @@
             const query = document.getElementById('searchQuery').value.trim();
             const location = document.getElementById('searchLocation').value.trim();
             const source = document.getElementById('searchSource').value;
+            const resultsPerPage = document.getElementById('resultsPerPage').value;
+            const remoteOnly = document.getElementById('filterRemoteOnly').checked;
+            const europeOnly = document.getElementById('filterEuropeOnly').checked;
             
             if (!query) {
                 alert('Please enter a search query');
@@ -602,6 +670,7 @@
             try {
                 const params = new URLSearchParams({ query, source });
                 if (location) params.append('location', location);
+                params.append('limit', resultsPerPage);
 
                 const res = await fetch(`${API_URL}/api/search?${params}`);
                 const data = await res.json();
@@ -612,20 +681,47 @@
                 }
 
                 if (data.jobs.length === 0) {
-                    resultsDiv.innerHTML = '<div class="alert alert-error">No jobs found. Try different keywords.</div>';
+                    resultsDiv.innerHTML = '<div class="alert alert-error">No jobs found. Try different keywords or location.</div>';
+                    return;
+                }
+
+                // Apply client-side filters
+                let filteredJobs = data.jobs;
+                
+                if (remoteOnly) {
+                    filteredJobs = filteredJobs.filter(job => {
+                        const loc = job.location.toLowerCase();
+                        return loc.includes('remote') || loc.includes('anywhere') || loc.includes('worldwide');
+                    });
+                }
+                
+                if (europeOnly) {
+                    const europeanCountries = ['uk', 'gb', 'germany', 'de', 'france', 'fr', 'netherlands', 'nl', 
+                        'spain', 'es', 'italy', 'it', 'poland', 'pl', 'portugal', 'pt', 'sweden', 'se', 
+                        'norway', 'no', 'denmark', 'dk', 'finland', 'fi', 'austria', 'at', 'belgium', 'be',
+                        'switzerland', 'ch', 'ireland', 'ie', 'europe', 'eu'];
+                    
+                    filteredJobs = filteredJobs.filter(job => {
+                        const loc = job.location.toLowerCase();
+                        return europeanCountries.some(country => loc.includes(country));
+                    });
+                }
+
+                if (filteredJobs.length === 0) {
+                    resultsDiv.innerHTML = '<div class="alert alert-error">No jobs match your filters. Try adjusting your search.</div>';
                     return;
                 }
 
                 selectedJobsForImport.clear();
                 
                 resultsDiv.innerHTML = `
-                    <div class="alert alert-success">Found ${data.total} jobs from ${data.source}!</div>
+                    <div class="alert alert-success">Found ${filteredJobs.length} jobs from ${data.source}! (filtered from ${data.total})</div>
                     <div style="margin-bottom: 15px;">
                         <button class="btn btn-success" onclick="importSelectedJobs()">Import Selected Jobs</button>
-                        <button class="btn" onclick="selectAllJobs(${data.jobs.length})">Select All</button>
+                        <button class="btn" onclick="selectAllJobs(${filteredJobs.length})">Select All</button>
                     </div>
                     <div class="jobs-grid">
-                        ${data.jobs.map((job, index) => `
+                        ${filteredJobs.map((job, index) => `
                             <div class="job-card search-result">
                                 <div class="checkbox-container">
                                     <input type="checkbox" id="job-${index}" onchange="toggleJobSelection(${index}, ${JSON.stringify(job).replace(/"/g, '&quot;')})">
@@ -660,11 +756,11 @@
             const infoEl = document.getElementById('sourceInfo');
             
             if (source === 'remoteok') {
-                infoEl.textContent = '💡 RemoteOK: No API key needed, remote jobs worldwide';
+                infoEl.textContent = '💡 RemoteOK: No API key needed, worldwide remote jobs. For Europe, use location filter.';
             } else if (source === 'jsearch') {
-                infoEl.textContent = '💡 JSearch: Requires RapidAPI key (10k free searches/month)';
+                infoEl.textContent = '💡 JSearch: Requires RapidAPI key (10k free searches/month). Primarily US jobs.';
             } else if (source === 'adzuna') {
-                infoEl.textContent = '💡 Adzuna: Europe-focused, requires API key (free tier available)';
+                infoEl.textContent = '💡 Adzuna: Europe-focused, requires API key. Use location: Germany, UK, France, Netherlands, etc.';
             }
         });
 
@@ -796,6 +892,76 @@
                 loadData();
             }
         }
+
+        async function changeStatus(jobId) {
+            const status = prompt('Change status to:\n\n1. new\n2. reviewed\n3. tailoring (preparing application)\n4. applied (submitted)\n5. interviewing (in interview process)\n6. offer (received offer!)\n7. rejected (not moving forward)\n\nEnter status:');
+            
+            if (!status) return;
+            
+            const validStatuses = ['new', 'reviewed', 'tailoring', 'applied', 'interviewing', 'offer', 'rejected'];
+            if (!validStatuses.includes(status.toLowerCase())) {
+                alert('Invalid status. Please use: new, reviewed, tailoring, applied, interviewing, offer, or rejected');
+                return;
+            }
+            
+            await updateStatus(jobId, status.toLowerCase());
+        }
+
+        async function editJob(jobId) {
+            try {
+                const res = await fetch(`${API_URL}/api/jobs/${jobId}`);
+                const data = await res.json();
+                const job = data.job;
+                
+                document.getElementById('editJobId').value = job.id;
+                document.getElementById('editTitle').value = job.title;
+                document.getElementById('editCompany').value = job.company;
+                document.getElementById('editLocation').value = job.location || '';
+                document.getElementById('editUrl').value = job.url;
+                document.getElementById('editSalary').value = job.salary || '';
+                document.getElementById('editExperienceLevel').value = job.experienceLevel || 'mid';
+                document.getElementById('editDescription').value = job.description || '';
+                document.getElementById('editNotes').value = job.notes || '';
+                
+                document.getElementById('editJobModal').classList.add('active');
+            } catch (error) {
+                alert('Failed to load job details');
+            }
+        }
+
+        function closeEditJobModal() {
+            document.getElementById('editJobModal').classList.remove('active');
+        }
+
+        document.getElementById('editJobForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const jobId = document.getElementById('editJobId').value;
+            const updates = {
+                title: document.getElementById('editTitle').value,
+                company: document.getElementById('editCompany').value,
+                location: document.getElementById('editLocation').value,
+                url: document.getElementById('editUrl').value,
+                salary: document.getElementById('editSalary').value,
+                experienceLevel: document.getElementById('editExperienceLevel').value,
+                description: document.getElementById('editDescription').value,
+                notes: document.getElementById('editNotes').value
+            };
+            
+            const res = await fetch(`${API_URL}/api/jobs/${jobId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            
+            if (res.ok) {
+                closeEditJobModal();
+                loadData();
+                alert('✅ Job updated successfully!');
+            } else {
+                alert('❌ Failed to update job');
+            }
+        });
 
         async function deleteJob(jobId) {
             if (!confirm('Are you sure you want to delete this job?')) return;
