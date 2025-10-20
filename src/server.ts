@@ -1,12 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -262,6 +261,18 @@ app.put('/api/jobs/:id', async (req, res) => {
       fields.push(`description = $${paramCount++}`);
       values.push(updates.description);
     }
+    if (updates.url !== undefined) {
+      fields.push(`url = $${paramCount++}`);
+      values.push(updates.url);
+    }
+    if (updates.salary !== undefined) {
+      fields.push(`salary = $${paramCount++}`);
+      values.push(updates.salary);
+    }
+    if (updates.experienceLevel !== undefined) {
+      fields.push(`experience_level = $${paramCount++}`);
+      values.push(updates.experienceLevel);
+    }
     if (updates.status) {
       fields.push(`status = $${paramCount++}`);
       values.push(updates.status);
@@ -341,17 +352,67 @@ app.delete('/api/jobs/:id', async (req, res) => {
 // Search jobs from external APIs
 app.get('/api/search', async (req, res) => {
   try {
-    const { query, location, source } = req.query;
+    const { query, location, source, limit } = req.query;
     
     if (!query) {
       return res.status(400).json({ success: false, error: 'Query is required' });
     }
 
-    const searchSource = source || 'jsearch';
+    const searchSource = source || 'remoteok';
+    const maxResults = parseInt(limit as string) || 20;
     let jobs: any[] = [];
 
-    // JSearch API (RapidAPI)
-    if (searchSource === 'jsearch') {
+    // RemoteOK API (Free, no auth required) - BEST FOR REMOTE/EUROPE
+    if (searchSource === 'remoteok') {
+      const response = await fetch('https://remoteok.com/api');
+      const data = await response.json();
+      
+      // Filter by query keywords
+      const keywords = (query as string).toLowerCase().split(' ');
+      const filtered = data.filter((job: any) => {
+        if (!job.position) return false;
+        const tags = job.tags ? job.tags.join(' ') : '';
+        const text = `${job.position} ${job.description || ''} ${tags} ${job.company || ''}`.toLowerCase();
+        
+        // Check if matches query
+        const matchesQuery = keywords.some(keyword => text.includes(keyword));
+        if (!matchesQuery) return false;
+        
+        // If location specified, filter by it
+        if (location) {
+          const loc = (job.location || '').toLowerCase();
+          const searchLoc = (location as string).toLowerCase();
+          
+          // Support Europe/European filtering
+          if (searchLoc.includes('europe') || searchLoc.includes('eu')) {
+            const europeanCountries = ['uk', 'gb', 'germany', 'de', 'france', 'fr', 'netherlands', 'nl', 
+              'spain', 'es', 'italy', 'it', 'poland', 'pl', 'portugal', 'pt', 'sweden', 'se', 
+              'norway', 'no', 'denmark', 'dk', 'finland', 'fi', 'austria', 'at', 'belgium', 'be',
+              'switzerland', 'ch', 'ireland', 'ie', 'europe'];
+            return europeanCountries.some(country => loc.includes(country));
+          }
+          
+          return loc.includes(searchLoc);
+        }
+        
+        return true;
+      }).slice(0, maxResults);
+      
+      jobs = filtered.map((job: any) => ({
+        title: job.position,
+        company: job.company,
+        location: job.location || 'Worldwide Remote',
+        description: job.description || '',
+        url: job.url,
+        salary: job.salary_max ? `$${job.salary_min || 0}-${job.salary_max}` : undefined,
+        experienceLevel: 'mid',
+        postedDate: job.date,
+        source: 'RemoteOK'
+      }));
+    }
+    
+    // JSearch API (RapidAPI) - US FOCUSED
+    else if (searchSource === 'jsearch') {
       const apiKey = process.env.RAPIDAPI_KEY;
       
       if (!apiKey) {
@@ -364,7 +425,7 @@ app.get('/api/search', async (req, res) => {
       const params = new URLSearchParams({
         query: query as string,
         page: '1',
-        num_pages: '1',
+        num_pages: Math.ceil(maxResults / 10).toString(),
         date_posted: 'week'
       });
 
@@ -384,12 +445,12 @@ app.get('/api/search', async (req, res) => {
 
       const data = await response.json();
       
-      jobs = (data.data || []).map((job: any) => {
+      jobs = (data.data || []).slice(0, maxResults).map((job: any) => {
         let salary = undefined;
         if (job.job_salary) {
           salary = job.job_salary;
         } else if (job.job_min_salary || job.job_max_salary) {
-          salary = `${job.job_min_salary || ''}-${job.job_max_salary || ''}`;
+          salary = `$${job.job_min_salary || ''}-${job.job_max_salary || ''}`;
         }
         
         const experienceLevel = job.job_required_experience && 
@@ -409,34 +470,7 @@ app.get('/api/search', async (req, res) => {
       });
     }
     
-    // RemoteOK API (Free, no auth required)
-    else if (searchSource === 'remoteok') {
-      const response = await fetch('https://remoteok.com/api');
-      const data = await response.json();
-      
-      // Filter by query keywords
-      const keywords = (query as string).toLowerCase().split(' ');
-      const filtered = data.filter((job: any) => {
-        if (!job.position) return false;
-        const tags = job.tags ? job.tags.join(' ') : '';
-        const text = `${job.position} ${job.description || ''} ${tags}`.toLowerCase();
-        return keywords.some(keyword => text.includes(keyword));
-      }).slice(0, 20);
-      
-      jobs = filtered.map((job: any) => ({
-        title: job.position,
-        company: job.company,
-        location: job.location || 'Remote',
-        description: job.description || '',
-        url: job.url,
-        salary: job.salary_max ? `$${job.salary_min || 0}-${job.salary_max}` : undefined,
-        experienceLevel: 'mid',
-        postedDate: job.date,
-        source: 'RemoteOK'
-      }));
-    }
-    
-    // Adzuna API (Europe-focused)
+    // Adzuna API (Europe-focused) - BEST FOR SPECIFIC EUROPEAN COUNTRIES
     else if (searchSource === 'adzuna') {
       const appId = process.env.ADZUNA_APP_ID;
       const appKey = process.env.ADZUNA_APP_KEY;
@@ -448,14 +482,30 @@ app.get('/api/search', async (req, res) => {
         });
       }
       
-      const country = (location as string)?.toLowerCase().includes('uk') ? 'gb' : 
-                     (location as string)?.toLowerCase().includes('france') ? 'fr' :
-                     (location as string)?.toLowerCase().includes('netherlands') ? 'nl' : 'de';
+      // Determine country from location
+      let country = 'de'; // Default Germany
+      if (location) {
+        const loc = (location as string).toLowerCase();
+        if (loc.includes('uk') || loc.includes('britain') || loc.includes('england')) country = 'gb';
+        else if (loc.includes('france')) country = 'fr';
+        else if (loc.includes('netherlands') || loc.includes('dutch')) country = 'nl';
+        else if (loc.includes('spain')) country = 'es';
+        else if (loc.includes('italy')) country = 'it';
+        else if (loc.includes('poland')) country = 'pl';
+        else if (loc.includes('portugal')) country = 'pt';
+        else if (loc.includes('sweden')) country = 'se';
+        else if (loc.includes('austria')) country = 'at';
+        else if (loc.includes('belgium')) country = 'be';
+        else if (loc.includes('switzerland')) country = 'ch';
+        else if (loc.includes('ireland')) country = 'ie';
+      }
+      
+      const resultsPerPage = Math.min(maxResults, 50); // Adzuna max is 50
       
       const params = new URLSearchParams({
         app_id: appId,
         app_key: appKey,
-        results_per_page: '20',
+        results_per_page: resultsPerPage.toString(),
         what: query as string
       });
       
@@ -478,13 +528,6 @@ app.get('/api/search', async (req, res) => {
         postedDate: job.created,
         source: 'Adzuna'
       }));
-    }
-    
-    else if (searchSource === 'weworkremotely') {
-      return res.json({
-        success: false,
-        error: 'WeWorkRemotely integration coming soon. Use RemoteOK or Adzuna for now.'
-      });
     }
 
     res.json({ success: true, jobs, total: jobs.length, source: searchSource });

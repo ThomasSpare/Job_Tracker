@@ -589,6 +589,7 @@
         async function searchJobs() {
             const query = document.getElementById('searchQuery').value.trim();
             const location = document.getElementById('searchLocation').value.trim();
+            const source = document.getElementById('searchSource').value;
             
             if (!query) {
                 alert('Please enter a search query');
@@ -599,7 +600,7 @@
             resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Searching for jobs...</div>';
 
             try {
-                const params = new URLSearchParams({ query });
+                const params = new URLSearchParams({ query, source });
                 if (location) params.append('location', location);
 
                 const res = await fetch(`${API_URL}/api/search?${params}`);
@@ -618,7 +619,7 @@
                 selectedJobsForImport.clear();
                 
                 resultsDiv.innerHTML = `
-                    <div class="alert alert-success">Found ${data.total} jobs!</div>
+                    <div class="alert alert-success">Found ${data.total} jobs from ${data.source}!</div>
                     <div style="margin-bottom: 15px;">
                         <button class="btn btn-success" onclick="importSelectedJobs()">Import Selected Jobs</button>
                         <button class="btn" onclick="selectAllJobs(${data.jobs.length})">Select All</button>
@@ -635,6 +636,7 @@
                                         <div class="job-title">${escapeHtml(job.title)}</div>
                                         <div class="job-company">${escapeHtml(job.company)}</div>
                                     </div>
+                                    <span class="status-badge status-new">${job.source || 'New'}</span>
                                 </div>
                                 <div class="job-info">
                                     📍 ${escapeHtml(job.location)} ${job.salary ? `| 💰 ${escapeHtml(job.salary)}` : ''}
@@ -651,6 +653,20 @@
                 resultsDiv.innerHTML = '<div class="alert alert-error">Search failed. Please try again.</div>';
             }
         }
+
+        // Update source info when changed
+        document.getElementById('searchSource').addEventListener('change', (e) => {
+            const source = e.target.value;
+            const infoEl = document.getElementById('sourceInfo');
+            
+            if (source === 'remoteok') {
+                infoEl.textContent = '💡 RemoteOK: No API key needed, remote jobs worldwide';
+            } else if (source === 'jsearch') {
+                infoEl.textContent = '💡 JSearch: Requires RapidAPI key (10k free searches/month)';
+            } else if (source === 'adzuna') {
+                infoEl.textContent = '💡 Adzuna: Europe-focused, requires API key (free tier available)';
+            }
+        });
 
         function toggleJobSelection(index, job) {
             const checkbox = document.getElementById(`job-${index}`);
