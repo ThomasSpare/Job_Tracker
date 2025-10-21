@@ -652,6 +652,265 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Job Tracker API is running' });
 });
 
+// AI Job Matching - Score jobs based on profile
+app.post('/api/match-jobs', async (req, res) => {
+  try {
+    const { jobs, profile } = req.body;
+    
+    if (!jobs || !Array.isArray(jobs)) {
+      return res.status(400).json({ success: false, error: 'Jobs array required' });
+    }
+    
+    if (!profile || !profile.skills) {
+      return res.status(400).json({ success: false, error: 'Profile with skills required' });
+    }
+    
+    // Score each job
+    const scoredJobs = jobs.map(job => {
+      const score = calculateJobScore(job, profile);
+      return {
+        ...job,
+        matchScore: score.total,
+        matchDetails: score.breakdown,
+        hireProbability: score.hireProbability,
+        reasoning: score.reasoning
+      };
+    });
+    
+    // Sort by match score (highest first)
+    scoredJobs.sort((a, b) => b.matchScore - a.matchScore);
+    
+    res.json({ success: true, jobs: scoredJobs });
+  } catch (error) {
+    console.error('Error matching jobs:', error);
+    res.status(500).json({ success: false, error: 'Failed to match jobs' });
+  }
+});
+
+// Calculate job match score
+function calculateJobScore(job: any, profile: any) {
+  let skillScore = 0;
+  let recencyScore = 0;
+  let hireProbabilityScore = 0;
+  let experienceScore = 0;
+  
+  const reasoning = [];
+  
+  // 1. Skills Match (40 points max)
+  const userSkills = profile.skills.map((s: string) => s.toLowerCase());
+  const jobText = `${job.title} ${job.description} ${job.company}`.toLowerCase();
+  
+  let matchedSkills = 0;
+  const foundSkills: string[] = [];
+  
+  userSkills.forEach((skill: string) => {
+    if (jobText.includes(skill)) {
+      matchedSkills++;
+      foundSkills.push(skill);
+    }
+  });
+  
+  skillScore = Math.min(40, (matchedSkills / userSkills.length) * 40);
+  
+  if (matchedSkills > 0) {
+    reasoning.push(`Matches ${matchedSkills}/${userSkills.length} of your skills: ${foundSkills.join(', ')}`);
+  }
+  
+  // 2. Recency (25 points max)
+  if (job.postedDate) {
+    const posted = new Date(job.postedDate);
+    const now = new Date();
+    const daysAgo = Math.floor((now.getTime() - posted.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysAgo <= 1) {
+      recencyScore = 25;
+      reasoning.push('Posted today - fresh opportunity!');
+    } else if (daysAgo <= 3) {
+      recencyScore = 20;
+      reasoning.push(`Posted ${daysAgo} days ago - very recent`);
+    } else if (daysAgo <= 7) {
+      recencyScore = 15;
+      reasoning.push(`Posted ${daysAgo} days ago - recent`);
+    } else if (daysAgo <= 14) {
+      recencyScore = 10;
+      reasoning.push(`Posted ${daysAgo} days ago`);
+    } else {
+      recencyScore = 5;
+      reasoning.push(`Posted ${daysAgo} days ago - older posting`);
+    }
+  }
+  
+  // 3. Experience Level Match (20 points max)
+  const userLevel = profile.experienceLevel || 'mid';
+  const jobLevel = job.experienceLevel || 'mid';
+  
+  if (userLevel === jobLevel) {
+    experienceScore = 20;
+    reasoning.push(`Perfect experience level match (${jobLevel})`);
+  } else if (
+    (userLevel === 'mid' && jobLevel === 'junior') ||
+    (userLevel === 'senior' && jobLevel === 'mid')
+  ) {
+    experienceScore = 15;
+    reasoning.push('Slight overqualified - good for career growth');
+  } else if (
+    (userLevel === 'junior' && jobLevel === 'mid') ||
+    (userLevel === 'mid' && jobLevel === 'senior')
+  ) {
+    experienceScore = 10;
+    reasoning.push('Stretch role - challenging opportunity');
+  } else {
+    experienceScore = 5;
+    reasoning.push('Experience level mismatch');
+  }
+  
+  // 4. Hire Probability Signals (15 points max)
+  let hiringSignals = 0;
+  
+  // Check for urgent hiring signals
+  const urgentKeywords = ['urgent', 'immediate', 'asap', 'hiring now', 'start immediately'];
+  if (urgentKeywords.some(keyword => jobText.includes(keyword))) {
+    hiringSignals += 5;
+    reasoning.push('Urgent hiring - higher chance');
+  }
+  
+  // Check for junior-friendly signals
+  const juniorFriendly = ['junior', 'entry level', 'mentorship', 'training provided', 'will train'];
+  if (juniorFriendly.some(keyword => jobText.includes(keyword))) {
+    hiringSignals += 3;
+    reasoning.push('Junior-friendly environment');
+  }
+  
+  // Check for remote-friendly company
+  if (job.location && (job.location.toLowerCase().includes('remote') || job.location.toLowerCase().includes('worldwide'))) {
+    hiringSignals += 3;
+    reasoning.push('Fully remote - broader candidate pool');
+  }
+  
+  // Check for startup (often hire faster)
+  const startupKeywords = ['startup', 'scale-up', 'fast-growing', 'seed', 'series a'];
+  if (startupKeywords.some(keyword => jobText.includes(keyword))) {
+    hiringSignals += 2;
+    reasoning.push('Startup - potentially faster hiring');
+  }
+  
+  // Small company indicator
+  const smallCompanyKeywords = ['small team', '5-10 people', 'small company', 'tight-knit'];
+  if (smallCompanyKeywords.some(keyword => jobText.includes(keyword))) {
+    hiringSignals += 2;
+    reasoning.push('Small team - direct impact');
+  }
+  
+  hireProbabilityScore = Math.min(15, hiringSignals);
+  
+  // Calculate total
+  const total = Math.round(skillScore + recencyScore + experienceScore + hireProbabilityScore);
+  
+  // Calculate hire probability (0-100%)
+  const hireProbability = Math.min(100, Math.round(
+    (skillScore / 40) * 40 +
+    (recencyScore / 25) * 25 +
+    (experienceScore / 20) * 20 +
+    (hireProbabilityScore / 15) * 15
+  ));
+  
+  return {
+    total,
+    breakdown: {
+      skills: Math.round(skillScore),
+      recency: Math.round(recencyScore),
+      experience: Math.round(experienceScore),
+      signals: Math.round(hireProbabilityScore)
+    },
+    hireProbability,
+    reasoning: reasoning.slice(0, 3) // Top 3 reasons
+  };
+}
+
+// Get or create user profile
+app.get('/api/profile', async (req, res) => {
+  try {
+    // For now, return a default profile structure
+    // In production, this would be stored in database per user
+    const defaultProfile = {
+      skills: [],
+      experienceLevel: 'mid',
+      preferredLocations: [],
+      salaryMin: null,
+      bio: ''
+    };
+    
+    res.json({ success: true, profile: defaultProfile });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to get profile' });
+  }
+});
+
+// Save user profile
+app.post('/api/profile', async (req, res) => {
+  try {
+    const profile = req.body;
+    
+    // In production, save to database
+    // For now, just return success
+    
+    res.json({ success: true, profile });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to save profile' });
+  }
+});
+
+// GitHub Jobs Search
+app.get('/api/search/github', async (req, res) => {
+  try {
+    const { query, location, limit } = req.query;
+    
+    if (!query) {
+      return res.status(400).json({ success: false, error: 'Query is required' });
+    }
+    
+    const maxResults = parseInt(limit as string) || 20;
+    
+    // GitHub Jobs API (deprecated but still works)
+    const params = new URLSearchParams({
+      description: query as string,
+      page: '0'
+    });
+    
+    if (location) {
+      params.append('location', location as string);
+    }
+    
+    const response = await fetch(`https://jobs.github.com/positions.json?${params}`);
+    
+    if (!response.ok) {
+      throw new Error('GitHub Jobs API returned an error');
+    }
+    
+    const data = await response.json();
+    
+    const jobs = data.slice(0, maxResults).map((job: any) => ({
+      title: job.title,
+      company: job.company,
+      location: job.location || 'Remote',
+      description: job.description || '',
+      url: job.url,
+      salary: null,
+      experienceLevel: 'mid',
+      postedDate: job.created_at,
+      source: 'GitHub Jobs'
+    }));
+    
+    res.json({ success: true, jobs, total: jobs.length, source: 'GitHub Jobs' });
+  } catch (error) {
+    console.error('GitHub Jobs search error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'GitHub Jobs search failed. The API may be unavailable.' 
+    });
+  }
+});
+
 // Start server
 async function start() {
   await initDB();

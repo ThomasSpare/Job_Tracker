@@ -375,6 +375,7 @@
             <div class="search-form">
                 <select id="searchSource" style="flex: 0.3; min-width: 150px;">
                     <option value="remoteok">RemoteOK (Global)</option>
+                    <option value="github">GitHub Jobs (Tech)</option>
                     <option value="jsearch">JSearch (US-focused)</option>
                     <option value="adzuna">Adzuna (Europe)</option>
                 </select>
@@ -382,7 +383,7 @@
                 <input type="text" id="searchLocation" class="search-input" placeholder="Europe, Germany, Remote..." style="flex: 0.5;" />
                 <button class="btn btn-primary" onclick="searchJobs()">Search</button>
             </div>
-            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                 <label style="display: flex; align-items: center; gap: 5px; color: #71767b; cursor: pointer;">
                     <input type="checkbox" id="filterRemoteOnly" style="width: auto;">
                     Fully Remote Only
@@ -390,6 +391,10 @@
                 <label style="display: flex; align-items: center; gap: 5px; color: #71767b; cursor: pointer;">
                     <input type="checkbox" id="filterEuropeOnly" style="width: auto;">
                     Europe Only
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; color: #71767b; cursor: pointer;">
+                    <input type="checkbox" id="useAIMatching" style="width: auto;">
+                    🤖 AI Match & Sort
                 </label>
                 <select id="resultsPerPage" style="padding: 8px; border-radius: 4px; border: 1px solid #2f3336; background: #16181c; color: #e7e9ea;">
                     <option value="20">20 results</option>
@@ -408,6 +413,7 @@
         <div class="controls">
             <button class="btn btn-primary" onclick="openAddJobModal()">➕ Add Job Manually</button>
             <button class="btn" onclick="openQuickAddModal()">⚡ Quick Add from URL</button>
+            <button class="btn" onclick="openProfileModal()">👤 My Profile</button>
             <select id="statusFilter" onchange="filterJobs()">
                 <option value="all">All Jobs</option>
                 <option value="new">New</option>
@@ -467,20 +473,6 @@
             </form>
         </div>
     </div>
-
-    <!-- Careerflow Modal -->
-    <div class="modal" id="careerflowModal">
-        <div class="modal-content">
-            <h2>📝 Careerflow Data</h2>
-            <p style="margin-bottom: 15px; color: #71767b;">Copy this information to Careerflow AI:</p>
-            <div style="background: #16181c; border: 1px solid #2f3336; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <pre id="careerflowData" style="white-space: pre-wrap; font-family: inherit; color: #e7e9ea;"></pre>
-            </div>
-            <button class="btn btn-primary" onclick="copyCareerflowData()">📋 Copy All</button>
-            <button class="btn" onclick="closeCareerflowModal()" style="margin-left: 10px;">Close</button>
-        </div>
-    </div>
-
     <!-- Edit Job Modal -->
     <div class="modal" id="editJobModal">
         <div class="modal-content">
@@ -531,7 +523,20 @@
         </div>
     </div>
 
-    <!-- Quick Add Modal (Mobile-friendly) -->
+    <!-- Careerflow Modal -->
+    <div class="modal" id="careerflowModal">
+        <div class="modal-content">
+            <h2>📝 Careerflow Data</h2>
+            <p style="margin-bottom: 15px; color: #71767b;">Copy this information to Careerflow AI:</p>
+            <div style="background: #16181c; border: 1px solid #2f3336; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <pre id="careerflowData" style="white-space: pre-wrap; font-family: inherit; color: #e7e9ea;"></pre>
+            </div>
+            <button class="btn btn-primary" onclick="copyCareerflowData()">📋 Copy All</button>
+            <button class="btn" onclick="closeCareerflowModal()" style="margin-left: 10px;">Close</button>
+        </div>
+    </div>
+
+    <!-- Quick Add Modal -->
     <div class="modal" id="quickAddModal">
         <div class="modal-content">
             <h2>⚡ Quick Add from URL</h2>
@@ -561,12 +566,57 @@
         </div>
     </div>
 
+    <!-- Profile Modal -->
+    <div class="modal" id="profileModal">
+        <div class="modal-content">
+            <h2>👤 My Profile - AI Job Matching</h2>
+            <p style="margin-bottom: 15px; color: #71767b;">Tell us about your skills so we can find the best matches!</p>
+            <form id="profileForm">
+                <div class="form-group">
+                    <label>Your Skills (one per line) *</label>
+                    <textarea id="profileSkills" rows="8" placeholder="React&#10;Node.js&#10;TypeScript&#10;PostgreSQL&#10;Docker&#10;AWS&#10;..."></textarea>
+                    <small style="color: #71767b;">Add technologies, languages, frameworks you know</small>
+                </div>
+                <div class="form-group">
+                    <label>Experience Level</label>
+                    <select id="profileExperienceLevel">
+                        <option value="junior">Junior (0-2 years)</option>
+                        <option value="mid" selected>Mid (2-5 years)</option>
+                        <option value="senior">Senior (5+ years)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Short Bio (optional)</label>
+                    <textarea id="profileBio" rows="3" placeholder="Fullstack developer passionate about building scalable web applications..."></textarea>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Save Profile</button>
+                    <button type="button" class="btn" onclick="closeProfileModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_URL = window.location.origin;
         let selectedJobsForImport = new Set();
+        let userProfile = null;
+
+        // Load profile on startup
+        async function loadProfile() {
+            try {
+                const savedProfile = localStorage.getItem('userProfile');
+                if (savedProfile) {
+                    userProfile = JSON.parse(savedProfile);
+                }
+            } catch (error) {
+                console.error('Error loading profile:', error);
+            }
+        }
 
         // Load initial data
         async function loadData() {
+            await loadProfile();
             await loadStats();
             await loadJobs();
         }
@@ -644,9 +694,9 @@
                     <div class="job-actions">
                         <a href="${job.url}" target="_blank" class="btn btn-small">View Job</a>
                         <button class="btn btn-small" onclick="prepareCareerflow('${job.id}')">Prepare for Careerflow</button>
-                        <button class="btn btn-small" onclick="updateStatus('${job.id}', 'applied')">Mark Applied</button>
+                        <button class="btn btn-small" onclick="editJob('${job.id}')">Edit</button>
+                        <button class="btn btn-small" onclick="changeStatus('${job.id}')">Change Status</button>
                         <button class="btn btn-small" onclick="deleteJob('${job.id}')">Delete</button>
-                        <button class="btn btn-small" onclick=editJob('${job.id}')>Edit</button>
                     </div>
                 </div>
             `).join('');
@@ -659,6 +709,7 @@
             const resultsPerPage = document.getElementById('resultsPerPage').value;
             const remoteOnly = document.getElementById('filterRemoteOnly').checked;
             const europeOnly = document.getElementById('filterEuropeOnly').checked;
+            const useAI = document.getElementById('useAIMatching').checked;
             
             if (!query) {
                 alert('Please enter a search query');
@@ -669,11 +720,18 @@
             resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Searching for jobs...</div>';
 
             try {
-                const params = new URLSearchParams({ query, source });
+                let endpoint = `${API_URL}/api/search`;
+                if (source === 'github') {
+                    endpoint = `${API_URL}/api/search/github`;
+                }
+                
+                const params = new URLSearchParams({ query, limit: resultsPerPage });
+                if (source !== 'github') {
+                    params.append('source', source);
+                }
                 if (location) params.append('location', location);
-                params.append('limit', resultsPerPage);
 
-                const res = await fetch(`${API_URL}/api/search?${params}`);
+                const res = await fetch(`${endpoint}?${params}`);
                 const data = await res.json();
 
                 if (!data.success) {
@@ -713,16 +771,53 @@
                     return;
                 }
 
+                // AI Matching
+                if (useAI && userProfile && userProfile.skills && userProfile.skills.length > 0) {
+                    resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>🤖 AI analyzing jobs for best matches...</div>';
+                    
+                    const matchRes = await fetch(`${API_URL}/api/match-jobs`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jobs: filteredJobs, profile: userProfile })
+                    });
+                    
+                    const matchData = await matchRes.json();
+                    if (matchData.success) {
+                        filteredJobs = matchData.jobs;
+                    }
+                } else if (useAI) {
+                    alert('⚠️ Please set up your profile first to use AI matching!\n\nClick "My Profile" button to add your skills.');
+                    document.getElementById('useAIMatching').checked = false;
+                }
+
                 selectedJobsForImport.clear();
                 
-                resultsDiv.innerHTML = `
-                    <div class="alert alert-success">Found ${filteredJobs.length} jobs from ${data.source}! (filtered from ${data.total})</div>
+                const matchInfo = useAI && userProfile ? `
+                    <div class="alert alert-success">
+                        🤖 AI Matched ${filteredJobs.length} jobs! Sorted by relevance to your profile.
+                    </div>
+                ` : `<div class="alert alert-success">Found ${filteredJobs.length} jobs from ${data.source}! (filtered from ${data.total})</div>`;
+                
+                resultsDiv.innerHTML = matchInfo + `
                     <div style="margin-bottom: 15px;">
                         <button class="btn btn-success" onclick="importSelectedJobs()">Import Selected Jobs</button>
                         <button class="btn" onclick="selectAllJobs(${filteredJobs.length})">Select All</button>
                     </div>
                     <div class="jobs-grid">
-                        ${filteredJobs.map((job, index) => `
+                        ${filteredJobs.map((job, index) => {
+                            const matchBadge = job.matchScore ? `
+                                <div style="margin-top: 10px; padding: 10px; background: rgba(29, 155, 240, 0.1); border-radius: 8px; border: 1px solid #1d9bf0;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                        <span style="font-weight: bold; color: #1d9bf0;">Match Score: ${job.matchScore}/100</span>
+                                        <span style="color: #00ba7c;">Hire Probability: ${job.hireProbability}%</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: #71767b;">
+                                        ${job.reasoning ? job.reasoning.map(r => `• ${r}`).join('<br>') : ''}
+                                    </div>
+                                </div>
+                            ` : '';
+                            
+                            return `
                             <div class="job-card search-result">
                                 <div class="checkbox-container">
                                     <input type="checkbox" id="job-${index}" onchange="toggleJobSelection(${index}, ${JSON.stringify(job).replace(/"/g, '&quot;')})">
@@ -738,15 +833,18 @@
                                 <div class="job-info">
                                     📍 ${escapeHtml(job.location)} ${job.salary ? `| 💰 ${escapeHtml(job.salary)}` : ''}
                                 </div>
+                                ${matchBadge}
                                 ${job.description ? `<div class="job-description">${escapeHtml(job.description.substring(0, 200))}...</div>` : ''}
                                 <div class="job-actions">
                                     <a href="${job.url}" target="_blank" class="btn btn-small">View Job</a>
                                 </div>
                             </div>
-                        `).join('')}
+                        `;
+                        }).join('')}
                     </div>
                 `;
             } catch (error) {
+                console.error('Search error:', error);
                 resultsDiv.innerHTML = '<div class="alert alert-error">Search failed. Please try again.</div>';
             }
         }
@@ -758,6 +856,8 @@
             
             if (source === 'remoteok') {
                 infoEl.textContent = '💡 RemoteOK: No API key needed, worldwide remote jobs. For Europe, use location filter.';
+            } else if (source === 'github') {
+                infoEl.textContent = '💡 GitHub Jobs: Tech-focused positions, many remote opportunities.';
             } else if (source === 'jsearch') {
                 infoEl.textContent = '💡 JSearch: Requires RapidAPI key (10k free searches/month). Primarily US jobs.';
             } else if (source === 'adzuna') {
@@ -846,6 +946,20 @@
             document.getElementById('quickAddForm').reset();
         }
 
+        function openProfileModal() {
+            // Load existing profile
+            if (userProfile) {
+                document.getElementById('profileSkills').value = userProfile.skills.join('\n');
+                document.getElementById('profileExperienceLevel').value = userProfile.experienceLevel || 'mid';
+                document.getElementById('profileBio').value = userProfile.bio || '';
+            }
+            document.getElementById('profileModal').classList.add('active');
+        }
+
+        function closeProfileModal() {
+            document.getElementById('profileModal').classList.remove('active');
+        }
+
         document.getElementById('addJobForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -880,6 +994,41 @@
                 loadData();
                 alert('✅ Job added successfully!');
             }
+        });
+
+        document.getElementById('profileForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const skillsText = document.getElementById('profileSkills').value;
+            const skills = skillsText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+            
+            if (skills.length === 0) {
+                alert('Please add at least one skill!');
+                return;
+            }
+            
+            userProfile = {
+                skills: skills,
+                experienceLevel: document.getElementById('profileExperienceLevel').value,
+                bio: document.getElementById('profileBio').value
+            };
+            
+            // Save to localStorage
+            localStorage.setItem('userProfile', JSON.stringify(userProfile));
+            
+            // Also save to server (for future multi-device sync)
+            try {
+                await fetch(`${API_URL}/api/profile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userProfile)
+                });
+            } catch (error) {
+                console.error('Failed to sync profile to server:', error);
+            }
+            
+            closeProfileModal();
+            alert('✅ Profile saved! Now try searching with AI matching enabled.');
         });
 
         async function updateStatus(jobId, status) {
