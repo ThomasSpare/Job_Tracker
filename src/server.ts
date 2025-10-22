@@ -860,10 +860,25 @@ app.post('/api/profile', async (req, res) => {
   }
 });
 
-// GitHub Jobs Search
+// GitHub Jobs Search - DEPRECATED, using alternative scraping
 app.get('/api/search/github', async (req, res) => {
   try {
-    const { query, location, limit } = req.query;
+    res.status(503).json({ 
+      success: false, 
+      error: 'GitHub Jobs API is no longer available. Try RemoteOK or Adzuna instead for tech jobs.' 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: 'GitHub Jobs is deprecated. Use RemoteOK for tech positions.' 
+    });
+  }
+});
+
+// WeWorkRemotely Jobs Search (alternative to GitHub Jobs)
+app.get('/api/search/weworkremotely', async (req, res) => {
+  try {
+    const { query, limit } = req.query;
     
     if (!query) {
       return res.status(400).json({ success: false, error: 'Query is required' });
@@ -871,45 +886,203 @@ app.get('/api/search/github', async (req, res) => {
     
     const maxResults = parseInt(limit as string) || 20;
     
-    // GitHub Jobs API (deprecated but still works)
-    const params = new URLSearchParams({
-      description: query as string,
-      page: '0'
+    // WeWorkRemotely doesn't have a public API, but RemoteOK is a good alternative
+    // Redirect to RemoteOK for now
+    res.json({ 
+      success: false, 
+      error: 'WeWorkRemotely does not have a public API. Please use RemoteOK which has similar tech jobs.',
+      suggestion: 'Use RemoteOK source instead - it has many remote tech positions!'
     });
-    
-    if (location) {
-      params.append('location', location as string);
-    }
-    
-    const response = await fetch(`https://jobs.github.com/positions.json?${params}`);
-    
-    if (!response.ok) {
-      throw new Error('GitHub Jobs API returned an error');
-    }
-    
-    const data = await response.json();
-    
-    const jobs = data.slice(0, maxResults).map((job: any) => ({
-      title: job.title,
-      company: job.company,
-      location: job.location || 'Remote',
-      description: job.description || '',
-      url: job.url,
-      salary: null,
-      experienceLevel: 'mid',
-      postedDate: job.created_at,
-      source: 'GitHub Jobs'
-    }));
-    
-    res.json({ success: true, jobs, total: jobs.length, source: 'GitHub Jobs' });
   } catch (error) {
-    console.error('GitHub Jobs search error:', error);
     res.status(500).json({ 
       success: false, 
-      error: 'GitHub Jobs search failed. The API may be unavailable.' 
+      error: 'WeWorkRemotely search unavailable. Use RemoteOK instead.' 
     });
   }
 });
+
+// Company Website Scraper
+app.post('/api/search/company', async (req, res) => {
+  try {
+    const { companyName, careerPageUrl, keywords } = req.body;
+    
+    if (!companyName || !careerPageUrl) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Company name and career page URL are required' 
+      });
+    }
+
+    console.log(`Scraping ${companyName} careers page: ${careerPageUrl}`);
+
+    // Fetch the career page
+    const response = await fetch(careerPageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch career page: ${response.status}`);
+    }
+
+    const html = await response.text();
+    
+    // Parse jobs from HTML
+    const jobs = parseCareerPage(html, companyName, careerPageUrl, keywords);
+    
+    res.json({ 
+      success: true, 
+      jobs, 
+      total: jobs.length, 
+      source: `${companyName} Careers`,
+      scrapedUrl: careerPageUrl
+    });
+  } catch (error) {
+    console.error('Company scraping error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: `Failed to scrape company page. The website may block automated access or have a different structure. Error: ${error}` 
+    });
+  }
+});
+
+// Parse career page HTML
+function parseCareerPage(html: string, companyName: string, baseUrl: string, keywords?: string): any[] {
+  const jobs: any[] = [];
+  
+  try {
+    // Common patterns for job listings on career pages
+    const patterns = [
+      // Pattern 1: Look for common job-related keywords in text
+      {
+        titleRegex: /<[^>]*>((?:Senior|Junior|Mid-Level|Staff)?\s*(?:Software|Full\s*Stack|Front\s*End|Back\s*End|DevOps|Data|ML|AI)\s*(?:Engineer|Developer|Architect)[^<]*)<\/[^>]*>/gi,
+        linkRegex: /<a[^>]+href=["']([^"']+)["'][^>]*>.*?(?:apply|view|details|learn more).*?<\/a>/gi
+      },
+      // Pattern 2: Job titles with links
+      {
+        titleRegex: /<(?:h[1-6]|div|span)[^>]*class=["'][^"']*(?:job|position|role|title)[^"']*["'][^>]*>([^<]+)<\/(?:h[1-6]|div|span)>/gi,
+        linkRegex: null
+      },
+      // Pattern 3: List items that might be jobs
+      {
+        titleRegex: /<li[^>]*>.*?<a[^>]+href=["']([^"']+)["'][^>]*>([^<]+)<\/a>.*?<\/li>/gi,
+        linkRegex: null
+      }
+    ];
+
+    // Extract all links and surrounding text
+    const linkPattern = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]*(?:<[^>]+>[^<]*)*)<\/a>/gi;
+    let match;
+    
+    while ((match = linkPattern.exec(html)) !== null) {
+      const url = match[1];
+      const linkText = match[2].replace(/<[^>]+>/g, '').trim();
+      
+      // Check if this looks like a job posting
+      const jobKeywords = ['engineer', 'developer', 'designer', 'manager', 'analyst', 
+                          'architect', 'lead', 'senior', 'junior', 'intern', 'fullstack',
+                          'frontend', 'backend', 'devops', 'data', 'ml', 'ai', 'product'];
+      
+      const isJobLink = jobKeywords.some(keyword => 
+        linkText.toLowerCase().includes(keyword) ||
+        url.toLowerCase().includes(keyword) ||
+        url.toLowerCase().includes('job') ||
+        url.toLowerCase().includes('career') ||
+        url.toLowerCase().includes('position')
+      );
+      
+      if (isJobLink && linkText.length > 10 && linkText.length < 150) {
+        // If keywords provided, filter by them
+        if (keywords) {
+          const searchTerms = keywords.toLowerCase().split(' ');
+          const matchesKeywords = searchTerms.some(term => 
+            linkText.toLowerCase().includes(term)
+          );
+          if (!matchesKeywords) continue;
+        }
+        
+        // Construct full URL
+        let fullUrl = url;
+        if (url.startsWith('/')) {
+          const urlObj = new URL(baseUrl);
+          fullUrl = `${urlObj.protocol}//${urlObj.host}${url}`;
+        } else if (!url.startsWith('http')) {
+          fullUrl = new URL(url, baseUrl).href;
+        }
+        
+        jobs.push({
+          title: linkText,
+          company: companyName,
+          location: 'See job posting',
+          description: `Found on ${companyName} careers page`,
+          url: fullUrl,
+          salary: null,
+          experienceLevel: determineExperienceLevel(linkText),
+          postedDate: new Date().toISOString(),
+          source: `${companyName} Careers`
+        });
+      }
+    }
+    
+    // If we found very few or no jobs, try alternative parsing
+    if (jobs.length < 3) {
+      // Look for JSON-LD structured data (many modern sites use this)
+      const jsonLdPattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/gis;
+      let jsonMatch;
+      
+      while ((jsonMatch = jsonLdPattern.exec(html)) !== null) {
+        try {
+          const jsonData = JSON.parse(jsonMatch[1]);
+          if (jsonData['@type'] === 'JobPosting' || 
+              (Array.isArray(jsonData) && jsonData.some((item: any) => item['@type'] === 'JobPosting'))) {
+            
+            const jobPostings = Array.isArray(jsonData) ? jsonData : [jsonData];
+            
+            jobPostings.forEach((posting: any) => {
+              if (posting['@type'] === 'JobPosting') {
+                jobs.push({
+                  title: posting.title || posting.name || 'Position',
+                  company: companyName,
+                  location: posting.jobLocation?.address?.addressLocality || 'See job posting',
+                  description: (posting.description || '').substring(0, 500),
+                  url: posting.url || baseUrl,
+                  salary: posting.baseSalary?.value?.value || null,
+                  experienceLevel: 'mid',
+                  postedDate: posting.datePosted || new Date().toISOString(),
+                  source: `${companyName} Careers`
+                });
+              }
+            });
+          }
+        } catch (e) {
+          // Invalid JSON, continue
+        }
+      }
+    }
+    
+    // Remove duplicates based on title
+    const uniqueJobs = jobs.filter((job, index, self) =>
+      index === self.findIndex((j) => j.title === job.title && j.url === job.url)
+    );
+    
+    return uniqueJobs;
+  } catch (error) {
+    console.error('Error parsing career page:', error);
+    return [];
+  }
+}
+
+// Determine experience level from job title
+function determineExperienceLevel(title: string): string {
+  const lower = title.toLowerCase();
+  if (lower.includes('senior') || lower.includes('lead') || lower.includes('staff') || lower.includes('principal')) {
+    return 'senior';
+  } else if (lower.includes('junior') || lower.includes('entry') || lower.includes('intern')) {
+    return 'junior';
+  }
+  return 'mid';
+}
 
 // Start server
 async function start() {

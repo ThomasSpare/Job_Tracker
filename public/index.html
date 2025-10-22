@@ -374,9 +374,8 @@
             <h2 style="margin-bottom: 15px; font-size: 1.3rem;">🔍 Search Jobs</h2>
             <div class="search-form">
                 <select id="searchSource" style="flex: 0.3; min-width: 150px;">
-                    <option value="remoteok">RemoteOK (Global)</option>
-                    <option value="github">GitHub Jobs (Tech)</option>
-                    <option value="jsearch">JSearch (US-focused)</option>
+                    <option value="remoteok">RemoteOK (Best - Free)</option>
+                    <option value="jsearch">JSearch (Global)</option>
                     <option value="adzuna">Adzuna (Europe)</option>
                 </select>
                 <input type="text" id="searchQuery" class="search-input" placeholder="e.g., fullstack developer, react, node.js" />
@@ -413,6 +412,7 @@
         <div class="controls">
             <button class="btn btn-primary" onclick="openAddJobModal()">➕ Add Job Manually</button>
             <button class="btn" onclick="openQuickAddModal()">⚡ Quick Add from URL</button>
+            <button class="btn" onclick="openCompanyScrapeModal()">🏢 Scrape Company</button>
             <button class="btn" onclick="openProfileModal()">👤 My Profile</button>
             <select id="statusFilter" onchange="filterJobs()">
                 <option value="all">All Jobs</option>
@@ -473,6 +473,7 @@
             </form>
         </div>
     </div>
+
     <!-- Edit Job Modal -->
     <div class="modal" id="editJobModal">
         <div class="modal-content">
@@ -592,6 +593,49 @@
                 <div style="display: flex; gap: 10px;">
                     <button type="submit" class="btn btn-primary">Save Profile</button>
                     <button type="button" class="btn" onclick="closeProfileModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Company Scrape Modal -->
+    <div class="modal" id="companyScrapeModal">
+        <div class="modal-content">
+            <h2>🏢 Scrape Company Career Page</h2>
+            <p style="margin-bottom: 15px; color: #71767b;">Search for jobs directly on company websites!</p>
+            <form id="companyScrapeForm">
+                <div class="form-group">
+                    <label>Company Name *</label>
+                    <input type="text" id="scrapeCompanyName" required placeholder="e.g., Stripe, Shopify, GitLab">
+                    <small style="color: #71767b;">The company you want to search</small>
+                </div>
+                <div class="form-group">
+                    <label>Career Page URL *</label>
+                    <input type="url" id="scrapeCareerUrl" required placeholder="https://company.com/careers">
+                    <small style="color: #71767b;">Full URL to their careers/jobs page</small>
+                </div>
+                <div class="form-group">
+                    <label>Keywords (optional)</label>
+                    <input type="text" id="scrapeKeywords" placeholder="fullstack, react, senior">
+                    <small style="color: #71767b;">Filter results by keywords (space-separated)</small>
+                </div>
+                <div style="padding: 15px; background: rgba(29, 155, 240, 0.1); border-radius: 8px; margin-bottom: 15px;">
+                    <div style="font-size: 14px; color: #71767b;">
+                        <strong style="color: #1d9bf0;">💡 How it works:</strong><br>
+                        • Scrapes the company's career page<br>
+                        • Finds all job postings automatically<br>
+                        • Filters by your keywords<br>
+                        • Shows results just like other searches<br>
+                        <br>
+                        <strong style="color: #1d9bf0;">Examples:</strong><br>
+                        • Stripe: https://stripe.com/jobs/search<br>
+                        • GitLab: https://about.gitlab.com/jobs/<br>
+                        • Shopify: https://www.shopify.com/careers
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">🔍 Scrape Jobs</button>
+                    <button type="button" class="btn" onclick="closeCompanyScrapeModal()">Cancel</button>
                 </div>
             </form>
         </div>
@@ -721,14 +765,8 @@
 
             try {
                 let endpoint = `${API_URL}/api/search`;
-                if (source === 'github') {
-                    endpoint = `${API_URL}/api/search/github`;
-                }
                 
-                const params = new URLSearchParams({ query, limit: resultsPerPage });
-                if (source !== 'github') {
-                    params.append('source', source);
-                }
+                const params = new URLSearchParams({ query, limit: resultsPerPage, source });
                 if (location) params.append('location', location);
 
                 const res = await fetch(`${endpoint}?${params}`);
@@ -855,11 +893,9 @@
             const infoEl = document.getElementById('sourceInfo');
             
             if (source === 'remoteok') {
-                infoEl.textContent = '💡 RemoteOK: No API key needed, worldwide remote jobs. For Europe, use location filter.';
-            } else if (source === 'github') {
-                infoEl.textContent = '💡 GitHub Jobs: Tech-focused positions, many remote opportunities.';
+                infoEl.textContent = '💡 RemoteOK: No API key needed, worldwide remote jobs. Best for tech positions!';
             } else if (source === 'jsearch') {
-                infoEl.textContent = '💡 JSearch: Requires RapidAPI key (10k free searches/month). Primarily US jobs.';
+                infoEl.textContent = '💡 JSearch: Requires RapidAPI key (10k free searches/month). Good global coverage.';
             } else if (source === 'adzuna') {
                 infoEl.textContent = '💡 Adzuna: Europe-focused, requires API key. Use location: Germany, UK, France, Netherlands, etc.';
             }
@@ -959,6 +995,118 @@
         function closeProfileModal() {
             document.getElementById('profileModal').classList.remove('active');
         }
+
+        function openCompanyScrapeModal() {
+            document.getElementById('companyScrapeModal').classList.add('active');
+        }
+
+        function closeCompanyScrapeModal() {
+            document.getElementById('companyScrapeModal').classList.remove('active');
+            document.getElementById('companyScrapeForm').reset();
+        }
+
+        document.getElementById('companyScrapeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const companyName = document.getElementById('scrapeCompanyName').value.trim();
+            const careerUrl = document.getElementById('scrapeCareerUrl').value.trim();
+            const keywords = document.getElementById('scrapeKeywords').value.trim();
+            
+            if (!companyName || !careerUrl) {
+                alert('Please provide company name and career page URL');
+                return;
+            }
+            
+            closeCompanyScrapeModal();
+            
+            const resultsDiv = document.getElementById('searchResults');
+            resultsDiv.scrollIntoView({ behavior: 'smooth' });
+            resultsDiv.innerHTML = `<div class="loading"><div class="spinner"></div>🏢 Scraping ${companyName} career page...</div>`;
+            
+            try {
+                const res = await fetch(`${API_URL}/api/search/company`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        companyName, 
+                        careerPageUrl: careerUrl,
+                        keywords 
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (!data.success) {
+                    resultsDiv.innerHTML = `<div class="alert alert-error">${data.error}</div>`;
+                    return;
+                }
+                
+                if (data.jobs.length === 0) {
+                    resultsDiv.innerHTML = `
+                        <div class="alert alert-error">
+                            No jobs found on ${companyName}'s career page.<br><br>
+                            Possible reasons:<br>
+                            • The URL might be incorrect<br>
+                            • The page structure is not standard<br>
+                            • No matching positions available<br>
+                            • The site blocks automated access<br><br>
+                            Try using the "Quick Add" feature instead to manually add jobs from this company.
+                        </div>
+                    `;
+                    return;
+                }
+                
+                selectedJobsForImport.clear();
+                
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        ✅ Found ${data.total} job${data.total !== 1 ? 's' : ''} at ${companyName}!<br>
+                        <small style="opacity: 0.8;">Scraped from: ${data.scrapedUrl}</small>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <button class="btn btn-success" onclick="importSelectedJobs()">Import Selected Jobs</button>
+                        <button class="btn" onclick="selectAllJobs(${data.jobs.length})">Select All</button>
+                    </div>
+                    <div class="jobs-grid">
+                        ${data.jobs.map((job, index) => `
+                            <div class="job-card search-result">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="job-${index}" onchange="toggleJobSelection(${index}, ${JSON.stringify(job).replace(/"/g, '&quot;')})">
+                                    <label for="job-${index}" style="margin: 0; cursor: pointer;">Select this job</label>
+                                </div>
+                                <div class="job-header" style="margin-top: 10px;">
+                                    <div>
+                                        <div class="job-title">${escapeHtml(job.title)}</div>
+                                        <div class="job-company">${escapeHtml(job.company)}</div>
+                                    </div>
+                                    <span class="status-badge status-new">${job.source}</span>
+                                </div>
+                                <div class="job-info">
+                                    📍 ${escapeHtml(job.location)}
+                                    ${job.experienceLevel ? `| 💼 ${escapeHtml(job.experienceLevel)}` : ''}
+                                </div>
+                                ${job.description ? `<div class="job-description">${escapeHtml(job.description)}</div>` : ''}
+                                <div class="job-actions">
+                                    <a href="${job.url}" target="_blank" class="btn btn-small">View Job</a>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Scraping error:', error);
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        Failed to scrape ${companyName}'s career page.<br><br>
+                        This could be because:<br>
+                        • The website blocks automated requests<br>
+                        • The URL is incorrect<br>
+                        • Network connectivity issues<br><br>
+                        Try visiting the page manually and using "Quick Add" for individual jobs.
+                    </div>
+                `;
+            }
+        });
 
         document.getElementById('addJobForm').addEventListener('submit', async (e) => {
             e.preventDefault();
